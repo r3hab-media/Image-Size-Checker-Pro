@@ -172,7 +172,7 @@ const formatBytes = (bytes) => {
 async function compressItem(item, job) {
   const raw = await fetchItemBuffer(item, job.tabId);
   const beforeBytes = raw.byteLength;
-  const res = await compressInWorker(raw, { quality: 92, target: compressionTarget(item, job.bytesPerPixel), chosenQuality: job.chosenQuality });
+  const res = await compressInWorker(raw, { quality: 92, target: compressionTarget(item, job.bytesPerPixel), chosenQuality: job.chosenQuality, lossyPng: Boolean(job.lossyPng) });
   const data = new Uint8Array(res.buffer);
   return {
     data,
@@ -377,8 +377,8 @@ function hostSlugOf(pageUrl) {
 }
 
 // Dry run used for the savings estimate: compresses without saving and reports the real result.
-export async function estimateItem(item, tabId, bytesPerPixel) {
-  const r = await compressItem(item, { tabId, bytesPerPixel });
+export async function estimateItem(item, tabId, bytesPerPixel, lossyPng) {
+  const r = await compressItem(item, { tabId, bytesPerPixel, lossyPng });
   return { beforeBytes: r.beforeBytes, afterBytes: r.afterBytes, savedPct: r.savedPct, note: r.note, reason: r.reason, unchanged: r.unchanged };
 }
 

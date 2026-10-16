@@ -436,3 +436,40 @@ export async function encodeRgbaPng({ width, height, rgba, sourcePng }) {
   if (pal) candidates.push(await encodePng({ width, height, ...packIndexed(rgba, width, height, pal), ancillary }));
   return pickSmallest(candidates);
 }
+
+// Lossy option: quantizes to a 256-color palette (with dithering) and keeps the result only if it
+// stays visually close to the source. Returns { bytes, colors, psnr } or { rejected, psnr } or null
+// (when the image already fits a palette, so the lossless path is already optimal).
+export async function optimizePngLossy(bytes, { minPsnr }) {
+  const { quantize, psnr } = await import('./quantize.js');
+  let img = await decodePng(bytes);
+  if (img.bitDepth === 16) img = reduce16To8(img) || take16HighBytes(img);
+  if (img.bitDepth !== 8 && img.colorType !== 3) return null;
+  const rgba = toRgba8(img);
+  if (exactPalette(rgba)) return null;
+
+  const { palette, indices } = quantize(rgba, img.width, img.height);
+  const approx = new Uint8Array(rgba.length);
+  for (let p = 0; p < indices.length; p++) approx.set(palette.subarray(indices[p] * 4, indices[p] * 4 + 4), p * 4);
+  const score = psnr(rgba, approx);
+  if (score < minPsnr) return { rejected: true, psnr: score };
+
+  // Same pixels the quantizer chose, re-packed through the exact-palette path (minimal bit depth,
+  // translucent entries first for a short tRNS).
+  const pal = exactPalette(approx);
+  const ancillary = img.ancillary.filter((c) => KEEP_CHUNKS.has(c.type));
+  const out = await encodePng({ width: img.width, height: img.height, ...packIndexed(approx, img.width, img.height, pal), ancillary });
+  return { bytes: out, colors: pal.keys.length, psnr: score };
+}
+
+// Lossy-mode fallback for 16-bit images whose low bytes carry real precision.
+function take16HighBytes(img) {
+  const out = new Uint8Array(img.pixels.length / 2);
+  for (let i = 0, o = 0; i < img.pixels.length; i += 2) out[o++] = img.pixels[i];
+  let trns = null;
+  if (img.trns && img.trns.length >= 2) {
+    trns = new Uint8Array(img.trns.length);
+    for (let i = 0; i < img.trns.length; i += 2) trns[i + 1] = img.trns[i];
+  }
+  return { ...img, bitDepth: 8, rowBytes: img.rowBytes / 2, pixels: out, trns };
+}

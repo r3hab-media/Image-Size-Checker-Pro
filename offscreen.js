@@ -25,10 +25,10 @@ async function runNextJob(job) {
   }
 }
 
-async function runNextEstimate({ tabId, item, bytesPerPixel }) {
+async function runNextEstimate({ tabId, item, bytesPerPixel, lossyPng }) {
   let result;
   try {
-    result = await estimateItem(item, tabId, bytesPerPixel);
+    result = await estimateItem(item, tabId, bytesPerPixel, lossyPng);
   } catch (err) {
     result = { error: String(err.message || err) };
   }
@@ -50,7 +50,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.target !== 'offscreen') return false;
   if (msg.type === 'RUN_JOB') jobs.push(msg.job);
   if (msg.type === 'RUN_ESTIMATES') {
-    for (const item of msg.items) estimates.push({ tabId: msg.tabId, item, bytesPerPixel: msg.bytesPerPixel });
+    for (const item of msg.items) estimates.push({ tabId: msg.tabId, item, bytesPerPixel: msg.bytesPerPixel, lossyPng: msg.lossyPng });
   }
   sendResponse({ ok: true }); // acknowledgement: the service worker retries if this never arrives
   drain();

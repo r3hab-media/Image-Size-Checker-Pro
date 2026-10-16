@@ -69,6 +69,9 @@
     <label class="overwrite-row" title="Adds a .webp version next to each compressed or resized PNG/JPEG (only when smaller), plus markup that serves it to browsers that support WebP">
       <input type="checkbox" id="webpCheck" /> Also create WebP copies with <code>&lt;picture&gt;</code> markup
     </label>
+    <label class="overwrite-row" title="Reduces PNGs to a 256-color palette with dithering, like TinyPNG. Kept only when smaller and visually close to the original; otherwise lossless compression is used.">
+      <input type="checkbox" id="lossyPngCheck" /> Allow lossy PNG (256 colors, only when visually near-identical)
+    </label>
     <div class="batch-compress-row">
       <button id="compressAllZipBtn" class="compress-all-btn">
         🗜️ Compress &amp; Download All Compressible (<span id="tooLargeCountBadge">0</span>) to ZIP
