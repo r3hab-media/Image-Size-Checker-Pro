@@ -66,6 +66,9 @@
     <label class="overwrite-row hidden" id="overwriteRow">
       <input type="checkbox" id="overwriteCheck" /> Overwrite files with the same name in this folder
     </label>
+    <label class="overwrite-row" title="Adds a .webp version next to each compressed or resized PNG/JPEG (only when smaller), plus markup that serves it to browsers that support WebP">
+      <input type="checkbox" id="webpCheck" /> Also create WebP copies with <code>&lt;picture&gt;</code> markup
+    </label>
     <div class="batch-compress-row">
       <button id="compressAllZipBtn" class="compress-all-btn">
         🗜️ Compress &amp; Download All Compressible (<span id="tooLargeCountBadge">0</span>) to ZIP

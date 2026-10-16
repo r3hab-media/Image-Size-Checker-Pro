@@ -7,6 +7,7 @@ let searchQuery = '';
 let sortMode = 'severity';
 let activeTabId = null;
 let overwriteExisting = false;
+let webpCopies = false;
 const compressedResults = new Map(); // image URL -> { beforeBytes, afterBytes, savedPct, note, width, height }
 
 const els = {
@@ -27,6 +28,7 @@ const els = {
   resetFolderBtn: document.getElementById('resetFolderBtn'),
   overwriteRow: document.getElementById('overwriteRow'),
   overwriteCheck: document.getElementById('overwriteCheck'),
+  webpCheck: document.getElementById('webpCheck'),
   compressAllZipBtn: document.getElementById('compressAllZipBtn'),
   resizeAllBtn: document.getElementById('resizeAllBtn'),
   resizeCountBadge: document.getElementById('resizeCountBadge'),
@@ -92,7 +94,8 @@ async function startJob(mode, items) {
     pageUrl: currentState.pageUrl,
     bytesPerPixel: currentState.settings?.bytesPerPixelTarget,
     destination,
-    overwrite: overwriteExisting
+    overwrite: overwriteExisting,
+    webp: webpCopies
   };
   const resp = await new Promise((resolve) =>
     chrome.runtime.sendMessage({ type: 'START_JOB', job }, (r) => {
@@ -321,20 +324,30 @@ function resizeResultHtml(item, info) {
   const files = info.variants.map((v) => `${escapeHtml(v.name)} (${v.width}×${v.height}, ${formatBytes(v.bytes)})`).join(' · ');
   return `<div class="resize-result">
       📐 Created ${files}
-      <pre class="snippet">${escapeHtml(info.snippet)}</pre>
-      <button class="mini-btn" data-act="copy-snippet" data-url="${escapeHtml(item.url)}">Copy snippet</button>
+      ${snippetHtml(`resize|${item.url}`, info.snippet)}
     </div>`;
 }
 
-function compressResultHtml(info) {
+// key is the compressedResults key the snippet is stored under.
+function snippetHtml(key, snippet) {
+  return `<pre class="snippet">${escapeHtml(snippet)}</pre>
+      <button class="mini-btn" data-act="copy-snippet" data-key="${escapeHtml(key)}">Copy snippet</button>`;
+}
+
+function compressResultHtml(item, info) {
   if (!info) return '';
+  const webp = info.webp
+    ? `<div class="resize-result">🌐 WebP copy ${escapeHtml(info.webp.name)} (${formatBytes(info.webp.bytes)})
+        ${snippetHtml(item.url, info.snippet)}
+      </div>`
+    : '';
   if (KEPT_NOTES.has(info.note)) {
-    return `<div class="compress-result-pill">ℹ️ Not changed: ${escapeHtml(info.reason || 'already optimal')}</div>`;
+    return `<div class="compress-result-pill">ℹ️ Not changed: ${escapeHtml(info.reason || 'already optimal')}</div>${webp}`;
   }
   return `<div class="compress-result-pill">
       ✓ ${formatBytes(info.beforeBytes)} → <strong>${formatBytes(info.afterBytes)}</strong>
       (-${info.savedPct}% · ${info.width}×${info.height}px kept)
-    </div>`;
+    </div>${webp}`;
 }
 
 // ---------- measured savings (background dry-run compression) ----------
@@ -350,7 +363,8 @@ const compressibleItems = () => (currentState ? uniqueByUrl(currentState.items.f
 
 // Images worth putting in the ZIP: compressible, minus those a dry run proved can't shrink.
 function zipCandidates() {
-  return compressibleItems().filter((i) => !estimates.get(i.url)?.unchanged);
+  // With WebP copies on, an already-optimal PNG/JPEG can still gain a smaller WebP version.
+  return compressibleItems().filter((i) => !estimates.get(i.url)?.unchanged || (webpCopies && (i.format === 'PNG' || i.format === 'JPEG')));
 }
 
 async function requestEstimates(tabId) {
@@ -454,7 +468,7 @@ function renderDashboard() {
         item.severity === 'error' ? 'Error' : item.severity === 'warn' ? 'Warn' : 'OK';
 
       const compPillHtml =
-        (compressResultHtml(compressedResults.get(item.url)) || estimateHtml(item)) +
+        (compressResultHtml(item, compressedResults.get(item.url)) || estimateHtml(item)) +
         resizeResultHtml(item, compressedResults.get(`resize|${item.url}`));
 
       const issuesHtml =
@@ -553,7 +567,7 @@ async function onItemAction(btn) {
     const job = await startJob('resize', [targetItem]);
     if (!job || job.state === 'error') flash(btn, 'Error', '📐 Resize', 1500);
   } else if (act === 'copy-snippet') {
-    const snippet = compressedResults.get(`resize|${btn.getAttribute('data-url')}`)?.snippet || '';
+    const snippet = compressedResults.get(btn.getAttribute('data-key'))?.snippet || '';
     try {
       await navigator.clipboard.writeText(snippet);
       flash(btn, 'Copied', 'Copy snippet', 1000);
@@ -605,6 +619,12 @@ els.resetFolderBtn.addEventListener('click', async () => {
 els.overwriteCheck.addEventListener('change', () => {
   overwriteExisting = els.overwriteCheck.checked;
   chrome.storage.local.set({ iscProOverwrite: overwriteExisting });
+});
+
+els.webpCheck.addEventListener('change', () => {
+  webpCopies = els.webpCheck.checked;
+  chrome.storage.local.set({ iscProWebp: webpCopies });
+  renderDashboard();
 });
 
 els.resizeAllBtn.addEventListener('click', () => {
@@ -775,9 +795,12 @@ els.copyMdBtn.addEventListener('click', async () => {
 // The folder may be picked in another window while this popup stays open.
 window.addEventListener('focus', refreshFolderLabel);
 
-chrome.storage.local.get(['iscProOverwrite'], (res) => {
+chrome.storage.local.get(['iscProOverwrite', 'iscProWebp'], (res) => {
   overwriteExisting = Boolean(res && res.iscProOverwrite);
   els.overwriteCheck.checked = overwriteExisting;
+  webpCopies = Boolean(res && res.iscProWebp);
+  els.webpCheck.checked = webpCopies;
+  renderDashboard();
 });
 refreshFolderLabel();
 ensureAndScan(false);

@@ -42,6 +42,19 @@ Each resize comes with a snippet to paste into your page, using the image's path
 
 CSS background images get an `image-set()` snippet instead. With a target folder the files are written there; otherwise they are saved as a ZIP that includes `srcset-snippets.html`. The `sizes` value assumes a fixed display width, so adjust it for fluid layouts.
 
+## Optional WebP copies
+
+Tick **Also create WebP copies with `<picture>` markup** to add a `.webp` version next to each compressed or resized PNG/JPEG (kept only when it is smaller), plus markup that serves it to browsers that support WebP and falls back to the original format:
+
+```html
+<picture>
+  <source type="image/webp" srcset="/assets/img/photo.webp">
+  <img src="/assets/img/photo.jpg" width="230" height="230" alt="…">
+</picture>
+```
+
+CSS backgrounds get `image-set()` with `type()` entries. Even an already-optimal JPEG can gain a WebP copy this way. WebP copies are converted to sRGB (they carry no color profile).
+
 ## Saving
 
 - **Default:** each save opens the native Save-As dialog.
