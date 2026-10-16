@@ -1,4 +1,5 @@
 import { KEPT_NOTES, RESIZABLE_FORMATS, variantWidths } from './js/jobs.js';
+import { canPreview, openPreview } from './js/preview.js';
 import { getFolder, getWritableFolder, clearFolder } from './js/folder-store.js';
 
 let currentState = null;
@@ -85,7 +86,7 @@ async function resolveDestination() {
 }
 
 // Hands a job to the service worker; it keeps running if this panel closes.
-async function startJob(mode, items) {
+async function startJob(mode, items, options = {}) {
   const destination = await resolveDestination();
   const job = {
     mode,
@@ -95,7 +96,8 @@ async function startJob(mode, items) {
     bytesPerPixel: currentState.settings?.bytesPerPixelTarget,
     destination,
     overwrite: overwriteExisting,
-    webp: webpCopies
+    webp: webpCopies,
+    ...options
   };
   const resp = await new Promise((resolve) =>
     chrome.runtime.sendMessage({ type: 'START_JOB', job }, (r) => {
@@ -459,8 +461,8 @@ function renderDashboard() {
 
   els.itemsList.innerHTML = visibleItems
     .map((item) => {
-      const canPreview = item.url && !item.url.startsWith('inline-');
-      const thumbHtml = canPreview
+      const hasThumb = item.url && !item.url.startsWith('inline-');
+      const thumbHtml = hasThumb
         ? `<img src="${escapeHtml(item.url)}" alt="" loading="lazy" />`
         : `<span class="thumb-fallback">${escapeHtml(item.format)}</span>`;
 
@@ -524,6 +526,11 @@ function renderDashboard() {
                 ? `<button class="mini-btn resize-btn" data-act="resize" data-id="${escapeHtml(item.id)}" title="Create ${variantWidths(item).map((w) => w + 'px').join(' and ')} wide versions plus a srcset snippet">📐 Resize</button>`
                 : ''
             }
+            ${
+              canPreview(item)
+                ? `<button class="mini-btn" data-act="preview" data-id="${escapeHtml(item.id)}" title="Compare original and compressed side by side and pick the quality">🔍 Preview</button>`
+                : ''
+            }
             <button class="mini-btn" data-act="locate" data-id="${escapeHtml(
               item.id
             )}" title="Scroll to image on page">Locate</button>
@@ -566,6 +573,15 @@ async function onItemAction(btn) {
     btn.textContent = 'Working…';
     const job = await startJob('resize', [targetItem]);
     if (!job || job.state === 'error') flash(btn, 'Error', '📐 Resize', 1500);
+  } else if (act === 'preview' && currentState) {
+    const targetItem = currentState.items.find((x) => x.id === id);
+    if (!targetItem) return;
+    openPreview(targetItem, {
+      tabId: activeTabId,
+      onSave: (quality) => startJob('single', [targetItem], { chosenQuality: quality })
+    }).catch((err) => {
+      els.compressionStatus.textContent = `Preview failed: ${err.message || err}`;
+    });
   } else if (act === 'copy-snippet') {
     const snippet = compressedResults.get(btn.getAttribute('data-key'))?.snippet || '';
     try {

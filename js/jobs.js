@@ -63,7 +63,7 @@ function compressInWorker(buffer, options) {
 
 // ---------- fetching ----------
 
-async function fetchItemBuffer(item, tabId) {
+export async function fetchItemBuffer(item, tabId) {
   if (!item || !item.url || item.url.startsWith('inline-')) throw new Error('This image has no downloadable source.');
   const url = item.url;
 
@@ -172,7 +172,7 @@ const formatBytes = (bytes) => {
 async function compressItem(item, job) {
   const raw = await fetchItemBuffer(item, job.tabId);
   const beforeBytes = raw.byteLength;
-  const res = await compressInWorker(raw, { quality: 92, target: compressionTarget(item, job.bytesPerPixel) });
+  const res = await compressInWorker(raw, { quality: 92, target: compressionTarget(item, job.bytesPerPixel), chosenQuality: job.chosenQuality });
   const data = new Uint8Array(res.buffer);
   return {
     data,

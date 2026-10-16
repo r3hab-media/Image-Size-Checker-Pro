@@ -190,6 +190,16 @@ export const tests = {
       if (len > new Uint8Array(loose.buffer).length) throw new Error('target run produced a bigger file');
     }),
 
+  'only an explicitly chosen quality may go below the quality floor': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.canvasBytes(800, 600, h.photoLike, 'image/jpeg', 1.0);
+      const floor = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), quality: 50 });
+      const chosen = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), chosenQuality: 50 });
+      const at82 = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), chosenQuality: 82 });
+      if (floor.buffer.byteLength !== at82.buffer.byteLength) throw new Error('quality 50 without choosing should clamp to 82');
+      if (!(chosen.buffer.byteLength < at82.buffer.byteLength)) throw new Error('chosen 50 should be smaller than 82');
+    }),
+
   'already-small JPEG is kept (never grows)': (ctx) =>
     run(ctx, async () => {
       const src = await h.canvasBytes(300, 200, h.photoLike, 'image/jpeg', 0.5);
