@@ -231,3 +231,6 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
   }
 });
+
+// The toolbar button opens the side panel, which stays open while browsing (unlike a popup).
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});

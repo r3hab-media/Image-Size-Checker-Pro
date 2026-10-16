@@ -300,7 +300,10 @@ export const tests = {
     // Pinning renders the tooltip with the filename.
     await page.bringToFront(); // rAF and smooth scrolling are paused in background tabs
     await sendToTab(popup, tabId, { type: 'SCROLL_TO_IMAGE', id: evil.id });
-    await sleep(1200);
+    // The tooltip appears once the smooth scroll brings the image into view.
+    await page
+      .waitForFunction(() => document.getElementById('isc-pro-shadow-host')?.shadowRoot.querySelector('.isc-tt-title'), { timeout: 5000 })
+      .catch(() => {});
     const xss = await page.evaluate(() => window.__xss);
     assert(xss === undefined, 'tooltip executed injected HTML');
     const title = await page.evaluate(() => document.getElementById('isc-pro-shadow-host').shadowRoot.querySelector('.isc-tt-title')?.textContent);

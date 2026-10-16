@@ -4,10 +4,11 @@
   padding: 0;
 }
 
+/* Fills the side panel, whose width the user controls; reflows below 600px. */
 body {
-  width: 750px;
-  min-height: 560px;
-  max-height: 600px;
+  width: 100%;
+  min-width: 320px;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
@@ -646,4 +647,57 @@ kbd {
 .footer-btn:hover {
   border-color: #38bdf8;
   color: #38bdf8;
+}
+
+/* Narrow side panel */
+@media (max-width: 600px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .filter-tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  #searchInput,
+  #sortSelect {
+    min-width: 0;
+  }
+
+  #sortSelect {
+    max-width: 45%;
+  }
+
+  .folder-picker-row,
+  .batch-compress-row {
+    flex-wrap: wrap;
+  }
+
+  .compression-status {
+    flex-basis: 100%;
+  }
+
+  .item-card {
+    flex-wrap: wrap;
+  }
+
+  .item-actions {
+    flex-direction: row;
+    flex-basis: 100%;
+  }
+
+  .item-actions .mini-btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand-sub {
+    max-width: 160px;
+  }
+
+  #openDemoBtn {
+    display: none;
+  }
 }
