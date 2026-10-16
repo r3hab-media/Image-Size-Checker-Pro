@@ -275,6 +275,28 @@ export const tests = {
       if (dims.width !== 100 || dims.height !== 200) throw new Error('dims ' + JSON.stringify(dims));
     }),
 
+  'WebP output: JPEG and translucent PNG convert, keep size/alpha': (ctx) =>
+    run(ctx, async () => {
+      const jpg = await h.canvasBytes(600, 400, h.photoLike, 'image/jpeg', 0.95);
+      const r1 = await engine.resizeImageBuffer({ buffer: jpg.buffer.slice(0), width: 100000, outFormat: 'webp' });
+      const o1 = new Uint8Array(r1.buffer);
+      if (engine.sniff(o1) !== 'webp' || r1.kind !== 'webp') throw new Error('not webp');
+      if (r1.width !== 600 || r1.height !== 400) throw new Error(`${r1.width}x${r1.height}`);
+      if (!(o1.length < jpg.length)) throw new Error(`webp not smaller ${jpg.length} -> ${o1.length}`);
+
+      const pngSrc = await h.canvasPng(200, 100, (c, w, hh) => {
+        c.fillStyle = 'rgba(200, 30, 30, 0.5)';
+        c.fillRect(0, 0, w / 2, hh);
+      });
+      const r2 = await engine.resizeImageBuffer({ buffer: pngSrc.buffer.slice(0), width: 100, outFormat: 'webp' });
+      const bmp = await createImageBitmap(new Blob([r2.buffer], { type: 'image/webp' }));
+      const c = new OffscreenCanvas(bmp.width, bmp.height);
+      c.getContext('2d').drawImage(bmp, 0, 0);
+      const px = c.getContext('2d').getImageData(10, 10, 1, 1).data;
+      const clear = c.getContext('2d').getImageData(90, 10, 1, 1).data;
+      if (bmp.width !== 100 || Math.abs(px[3] - 128) > 6 || clear[3] !== 0) throw new Error(`alpha ${px[3]} / ${clear[3]}`);
+    }),
+
   'resize refuses formats it cannot write back (GIF)': (ctx) =>
     run(ctx, async () => {
       const gif = Uint8Array.from(atob('R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='), (c) => c.charCodeAt(0));

@@ -219,21 +219,67 @@ export function variantWidths(item) {
   return [...new Set([w, w * 2])].filter((v) => v < item.intrinsicW);
 }
 
-function srcsetSnippet(item, variants) {
-  const dir = urlDir(item.url);
-  const w = item.renderedW;
+const MIME_BY_EXT = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+const mimeOfPath = (p) => MIME_BY_EXT[(p.split('.').pop() || '').toLowerCase()] || '';
+const swapExt = (name, ext) => `${name.replace(/\.[^.]+$/, '')}.${ext}`;
+
+// WebP copies are only worth making from formats that are not already WebP.
+const wantsWebp = (job, item) => Boolean(job.webp) && (item.format === 'PNG' || item.format === 'JPEG');
+
+// Markup for the files produced. fallback/webp are [{ path, width }] smallest first; a single entry
+// means "same size as the original". Images get <img srcset> (inside <picture> when there is WebP);
+// CSS backgrounds get image-set(), since srcset does not apply to them.
+function buildSnippet(item, fallback, webp = []) {
+  const w = item.renderedW || item.intrinsicW;
   const h = Math.round((w * item.intrinsicH) / item.intrinsicW);
-  const sources = variants.map((v) => ({ path: `${dir}${v.name}`, width: v.width }));
-  // When 2x would be at least the original size, the original itself serves high-density screens.
-  if (!variants.some((v) => v.width >= w * 2)) sources.push({ path: `${dir}${item.originalFilename}`, width: item.intrinsicW });
-  const largest = sources[sources.length - 1].path;
-  // CSS backgrounds can't use srcset; image-set() with density descriptors does the same job.
+  const multi = fallback.length > 1 || webp.length > 1;
+
   if (item.kind === 'bg') {
-    const set = sources.map((s) => `url("${s.path}") ${Math.round((s.width / w) * 100) / 100}x`).join(', ');
-    return `background-image: url("${sources[0].path}");\nbackground-image: image-set(${set});`;
+    const density = (s) => (multi ? ` ${Math.round((s.width / w) * 100) / 100}x` : '');
+    const typed = webp.length > 0;
+    const entry = (s) => `url("${s.path}")${typed ? ` type("${mimeOfPath(s.path)}")` : ''}${density(s)}`;
+    return `background-image: url("${fallback[0].path}");\nbackground-image: image-set(${[...webp, ...fallback].map(entry).join(', ')});`;
   }
-  const srcset = sources.map((s) => `${s.path} ${s.width}w`).join(', ');
-  return `<img src="${escAttr(largest)}" srcset="${escAttr(srcset)}" sizes="${w}px" width="${w}" height="${h}" alt="${escAttr(item.altText || '')}">`;
+
+  const srcsetOf = (list) => list.map((s) => `${s.path} ${s.width}w`).join(', ');
+  const largest = fallback[fallback.length - 1].path;
+  const dims = `width="${w}" height="${h}" alt="${escAttr(item.altText || '')}"`;
+  const img =
+    fallback.length > 1
+      ? `<img src="${escAttr(largest)}" srcset="${escAttr(srcsetOf(fallback))}" sizes="${w}px" ${dims}>`
+      : `<img src="${escAttr(largest)}" ${dims}>`;
+  if (!webp.length) return img;
+  const source =
+    webp.length > 1
+      ? `<source type="image/webp" srcset="${escAttr(srcsetOf(webp))}" sizes="${w}px">`
+      : `<source type="image/webp" srcset="${escAttr(webp[0].path)}">`;
+  return `<picture>\n  ${source}\n  ${img}\n</picture>`;
+}
+
+// Same-size WebP copy of an image, kept only when it is smaller than the best other version.
+async function webpCopy(item, job, bestBytes) {
+  if (!wantsWebp(job, item)) return null;
+  try {
+    const raw = await fetchItemBuffer(item, job.tabId); // served from cache after the first fetch
+    const res = await webpInWorker(raw, item.intrinsicW || Number.MAX_SAFE_INTEGER);
+    const data = new Uint8Array(res.buffer);
+    return data.length < bestBytes ? { name: swapExt(item.originalFilename, 'webp'), data, mime: 'image/webp' } : null;
+  } catch (_) {
+    return null; // the WebP copy is optional; never fail the main job over it
+  }
+}
+
+function pictureSnippet(item, webp) {
+  const dir = urlDir(item.url);
+  return buildSnippet(item, [{ path: `${dir}${item.originalFilename}`, width: item.intrinsicW }], [{ path: `${dir}${webp.name}`, width: item.intrinsicW }]);
+}
+
+function snippetsFile(name, snippets) {
+  return { name, data: new TextEncoder().encode(`<!-- snippets from Image Size Checker Pro -->\n${snippets.join('\n\n')}\n`) };
+}
+
+function webpInWorker(buffer, width) {
+  return compressInWorker(buffer, { op: 'resize', width, outFormat: 'webp' });
 }
 
 async function writeToFolder(dir, name, data, mime, overwrite) {
@@ -264,17 +310,37 @@ async function runResizeJob(job, update) {
       const widths = variantWidths(item);
       if (!widths.length) throw new Error('already no larger than it is displayed');
       const raw = await fetchItemBuffer(item, job.tabId);
+      const emit = async (name, res) => {
+        const data = new Uint8Array(res.buffer);
+        const finalName = folder ? await writeToFolder(folder, name, data, res.mime, job.overwrite) : name;
+        if (!folder) zipEntries.push({ name: safeZipPath(name), data });
+        fileCount++;
+        return { name: finalName, width: res.width, height: res.height, bytes: data.length };
+      };
+
       const variants = [];
       for (const width of widths) {
         const res = await resizeInWorker(raw.slice(0), width);
-        const data = new Uint8Array(res.buffer);
-        let name = variantName(item.originalFilename, res.width);
-        if (folder) name = await writeToFolder(folder, name, data, res.mime, job.overwrite);
-        else zipEntries.push({ name: safeZipPath(name), data });
-        variants.push({ name, width: res.width, height: res.height, bytes: data.length });
-        fileCount++;
+        variants.push(await emit(variantName(item.originalFilename, res.width), res));
       }
-      const snippet = srcsetSnippet(item, variants);
+      // When 2x would be at least the original size, the original itself serves high-density screens.
+      const originalServes2x = !widths.some((v) => v >= item.renderedW * 2);
+      const dir = urlDir(item.url);
+      const fallback = variants.map((v) => ({ path: `${dir}${v.name}`, width: v.width }));
+      if (originalServes2x) fallback.push({ path: `${dir}${item.originalFilename}`, width: item.intrinsicW });
+
+      const webp = [];
+      if (wantsWebp(job, item)) {
+        const webpWidths = originalServes2x ? [...widths, item.intrinsicW] : widths;
+        for (const width of webpWidths) {
+          const res = await webpInWorker(raw.slice(0), width);
+          const v = await emit(variantName(swapExt(item.originalFilename, 'webp'), res.width), res);
+          variants.push(v);
+          webp.push({ path: `${dir}${v.name}`, width: v.width });
+        }
+      }
+
+      const snippet = buildSnippet(item, fallback, webp);
       snippets.push(`<!-- ${item.originalFilename} (${item.intrinsicW}×${item.intrinsicH}, shown at ${item.renderedW}px) -->\n${snippet}`);
       results[`resize|${item.url}`] = { note: 'resized', beforeBytes: raw.byteLength, variants, snippet };
     } catch (err) {
@@ -285,13 +351,13 @@ async function runResizeJob(job, update) {
   const failNote = failed.length ? ` · ${failed.length} failed: ${failed.join(', ')}` : '';
   if (!fileCount) return { status: `Nothing resized${failNote}`, results };
 
-  const snippetsHtml = new TextEncoder().encode(`<!-- srcset snippets from Image Size Checker Pro -->\n${snippets.join('\n\n')}\n`);
+  const snippetsEntry = snippetsFile('srcset-snippets.html', snippets);
   const files = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
   if (folder) {
-    if (candidates.length > 1) await writeToFolder(folder, 'srcset-snippets.html', snippetsHtml, 'text/html', job.overwrite);
+    if (candidates.length > 1) await writeToFolder(folder, snippetsEntry.name, snippetsEntry.data, 'text/html', job.overwrite);
     return { status: `Saved ${files} to ${folder.name ? `/${folder.name}/` : 'the target folder'}${failNote}`, results };
   }
-  zipEntries.push({ name: 'srcset-snippets.html', data: snippetsHtml });
+  zipEntries.push(snippetsEntry);
   const zipBytes = new Uint8Array(await makeZip(zipEntries).arrayBuffer());
   const zipName =
     candidates.length === 1
@@ -331,9 +397,27 @@ export async function runJob(job, update) {
     update({ status: `Compressing ${item.originalFilename}…` });
     const r = await compressItem(item, job);
     record(item, r);
-    if (r.unchanged) return { status: `${item.originalFilename}: not changed — ${r.reason || 'already optimal'}`, results };
-    const saved = await save(r.data, item.originalFilename, r.mime, job);
-    return { status: saved.cancelled ? 'Save cancelled.' : `Saved ${saved.path} (-${r.savedPct}%)`, results };
+    const webp = await webpCopy(item, job, r.afterBytes);
+    if (webp) Object.assign(results[item.url], { webp: { name: webp.name, bytes: webp.data.length }, snippet: pictureSnippet(item, webp) });
+    if (r.unchanged && !webp) return { status: `${item.originalFilename}: not changed — ${r.reason || 'already optimal'}`, results };
+
+    const files = [];
+    if (!r.unchanged) files.push({ name: item.originalFilename, data: r.data, mime: r.mime });
+    if (webp) files.push(webp);
+    const pct = r.unchanged ? '' : ` (-${r.savedPct}%)`;
+    if (files.length === 1 || job.destination === 'folder') {
+      const paths = [];
+      for (const f of files) {
+        const saved = await save(f.data, f.name, f.mime, job);
+        if (saved.cancelled) return { status: 'Save cancelled.', results };
+        paths.push(saved.path);
+      }
+      return { status: `Saved ${paths.join(' + ')}${pct}`, results };
+    }
+    // Several files and no target folder: one ZIP instead of several Save-As dialogs.
+    const zip = makeZip([...files.map((f) => ({ name: safeZipPath(f.name), data: f.data })), snippetsFile('picture-snippets.html', [results[item.url].snippet])]);
+    const saved = await save(new Uint8Array(await zip.arrayBuffer()), swapExt(item.originalFilename, 'zip'), 'application/zip', job);
+    return { status: saved.cancelled ? 'Save cancelled.' : `Saved ZIP (${files.map((f) => f.name).join(' + ')})${pct}`, results };
   }
 
   // The same image can appear several times on a page; compress and package it once.
@@ -343,6 +427,7 @@ export async function runJob(job, update) {
   const usedNames = new Set();
   const skipped = [];
   const failed = [];
+  const pictureSnippets = [];
   let totalBefore = 0;
   let totalAfter = 0;
 
@@ -358,19 +443,32 @@ export async function runJob(job, update) {
       continue;
     }
     record(item, r);
-    if (r.unchanged) {
+    const webp = await webpCopy(item, job, r.afterBytes);
+    if (r.unchanged && !webp) {
       skipped.push(item.originalFilename);
       continue;
     }
-    totalBefore += r.beforeBytes;
-    totalAfter += r.afterBytes;
     // Keep the exact original filename; on a clash use the URL folder path, then a numeric prefix.
-    let name = safeZipPath(item.originalFilename);
-    if (usedNames.has(name)) name = safeZipPath(item.relativePath || item.originalFilename);
-    if (usedNames.has(name)) name = safeZipPath(`${idx + 1}_${item.originalFilename}`);
-    usedNames.add(name);
-    entries.push({ name, data: r.data });
+    const zipName = (filename, relative) => {
+      let name = safeZipPath(filename);
+      if (usedNames.has(name)) name = safeZipPath(relative || filename);
+      if (usedNames.has(name)) name = safeZipPath(`${idx + 1}_${filename}`);
+      usedNames.add(name);
+      return name;
+    };
+    if (!r.unchanged) {
+      totalBefore += r.beforeBytes;
+      totalAfter += r.afterBytes;
+      entries.push({ name: zipName(item.originalFilename, item.relativePath), data: r.data });
+    }
+    if (webp) {
+      entries.push({ name: zipName(webp.name, item.relativePath && swapExt(item.relativePath, 'webp')), data: webp.data });
+      const snippet = pictureSnippet(item, webp);
+      Object.assign(results[item.url], { webp: { name: webp.name, bytes: webp.data.length }, snippet });
+      pictureSnippets.push(`<!-- ${item.originalFilename} -->\n${snippet}`);
+    }
   }
+  if (pictureSnippets.length) entries.push(snippetsFile('picture-snippets.html', pictureSnippets));
 
   const notes = [];
   if (skipped.length) notes.push(`${skipped.length} already optimal or format kept: ${skipped.join(', ')}`);

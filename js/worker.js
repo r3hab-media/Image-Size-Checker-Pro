@@ -209,10 +209,13 @@ export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, t
 }
 
 const RESIZE_QUALITY = 85;
+// PNGs are usually sharp-edged graphics, which show lossy artifacts sooner than photos.
+const WEBP_FROM_PNG_QUALITY = 90;
 
 // Resizes to `width` (height keeps the intrinsic aspect ratio) in the original format, for srcset
 // variants. Never upscales. Color data is kept the same way as compression keeps it.
-export async function resizeImageBuffer({ buffer, width, quality = RESIZE_QUALITY }) {
+// outFormat 'webp' instead writes a WebP copy (converted to sRGB, since it carries no profile).
+export async function resizeImageBuffer({ buffer, width, quality, outFormat }) {
   const bytes = new Uint8Array(buffer);
   const kind = sniff(bytes);
   if (!['jpeg', 'png', 'webp'].includes(kind)) {
@@ -222,9 +225,12 @@ export async function resizeImageBuffer({ buffer, width, quality = RESIZE_QUALIT
     throw new Error('Animated images are not resized.');
   }
 
+  const toWebp = outFormat === 'webp';
+  const q = quality ?? (toWebp && kind === 'png' ? WEBP_FROM_PNG_QUALITY : RESIZE_QUALITY);
+
   // PNG color chunks and RGB JPEG ICC profiles are carried over, so decode those without conversion.
-  let keepIcc = kind === 'png';
-  if (kind === 'jpeg') {
+  let keepIcc = kind === 'png' && !toWebp;
+  if (kind === 'jpeg' && !toWebp) {
     const info = readJpegInfo(bytes);
     keepIcc = info.icc.length > 0 && info.iccIsRgb && info.components === 3;
   }
@@ -249,16 +255,16 @@ export async function resizeImageBuffer({ buffer, width, quality = RESIZE_QUALIT
   bitmap.close();
 
   let out;
-  if (kind === 'png') {
+  if (toWebp || kind === 'webp') {
+    out = await encodeCanvas(canvas, 'image/webp', q);
+    if (!out) throw new Error('This browser cannot save WebP files.');
+  } else if (kind === 'png') {
     const { data } = ctx.getImageData(0, 0, w, h);
     out = await encodeRgbaPng({ width: w, height: h, rgba: new Uint8Array(data.buffer), sourcePng: bytes });
-  } else if (kind === 'jpeg') {
-    out = transplantJpegMetadata(bytes, await encodeCanvas(canvas, 'image/jpeg', quality), { keepIcc });
   } else {
-    out = await encodeCanvas(canvas, 'image/webp', quality);
-    if (!out) throw new Error('This browser cannot save WebP files.');
+    out = transplantJpegMetadata(bytes, await encodeCanvas(canvas, 'image/jpeg', q), { keepIcc });
   }
-  return result(out, kind, { note: 'resized', width: w, height: h, origWidth, origHeight });
+  return result(out, toWebp ? 'webp' : kind, { note: 'resized', width: w, height: h, origWidth, origHeight });
 }
 
 if (typeof self !== 'undefined' && typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
