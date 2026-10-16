@@ -30,6 +30,18 @@ A result is only used when it is smaller than the original; otherwise the origin
 
 After each scan, the compressible images are test-compressed in the background (your own compress and ZIP clicks always go first). **Achievable Savings** is the measured total, and each image card says whether compression will help. "Too Large" is split into *compressible* (a heavy PNG, JPEG, WebP or SVG) and *oversized px* (pixel dimensions larger than displayed, which only resizing can fix).
 
+## Resizing for display
+
+Compression keeps pixel dimensions. For images whose pixels are larger than they are displayed ("oversized px"), **📐 Resize** (per image) or **Resize All Oversized** creates versions at 1x and 2x the displayed width, in the original format, named `name-<width>w.ext` (for example `logo-44w.png` and `logo-88w.png`). Images are never upscaled; if 2x would be at least the original size, the original file is used for 2x.
+
+Each resize comes with a snippet to paste into your page, using the image's path on your site:
+
+```html
+<img src="/assets/img/photo-460w.jpg" srcset="/assets/img/photo-230w.jpg 230w, /assets/img/photo-460w.jpg 460w" sizes="230px" width="230" height="230" alt="…">
+```
+
+CSS background images get an `image-set()` snippet instead. With a target folder the files are written there; otherwise they are saved as a ZIP that includes `srcset-snippets.html`. The `sizes` value assumes a fixed display width, so adjust it for fluid layouts.
+
 ## Saving
 
 - **Default:** each save opens the native Save-As dialog.

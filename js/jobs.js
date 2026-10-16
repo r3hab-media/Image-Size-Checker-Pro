@@ -188,6 +188,128 @@ async function compressItem(item, job) {
   };
 }
 
+// ---------- resize for display (srcset variants) ----------
+
+export const RESIZABLE_FORMATS = new Set(['PNG', 'JPEG', 'WEBP']);
+
+function resizeInWorker(buffer, width) {
+  return compressInWorker(buffer, { op: 'resize', width });
+}
+
+const escAttr = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+function variantName(filename, width) {
+  const dot = filename.lastIndexOf('.');
+  return dot > 0 ? `${filename.slice(0, dot)}-${width}w${filename.slice(dot)}` : `${filename}-${width}w`;
+}
+
+// Directory of the image on its site (e.g. "/assets/img/"), so snippets can be pasted as-is.
+function urlDir(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.pathname.slice(0, u.pathname.lastIndexOf('/') + 1);
+  } catch (_) {}
+  return '';
+}
+
+// 1x and 2x of the displayed width, keeping only sizes smaller than the original.
+export function variantWidths(item) {
+  const w = item.renderedW;
+  if (!w || !item.intrinsicW) return [];
+  return [...new Set([w, w * 2])].filter((v) => v < item.intrinsicW);
+}
+
+function srcsetSnippet(item, variants) {
+  const dir = urlDir(item.url);
+  const w = item.renderedW;
+  const h = Math.round((w * item.intrinsicH) / item.intrinsicW);
+  const sources = variants.map((v) => ({ path: `${dir}${v.name}`, width: v.width }));
+  // When 2x would be at least the original size, the original itself serves high-density screens.
+  if (!variants.some((v) => v.width >= w * 2)) sources.push({ path: `${dir}${item.originalFilename}`, width: item.intrinsicW });
+  const largest = sources[sources.length - 1].path;
+  // CSS backgrounds can't use srcset; image-set() with density descriptors does the same job.
+  if (item.kind === 'bg') {
+    const set = sources.map((s) => `url("${s.path}") ${Math.round((s.width / w) * 100) / 100}x`).join(', ');
+    return `background-image: url("${sources[0].path}");\nbackground-image: image-set(${set});`;
+  }
+  const srcset = sources.map((s) => `${s.path} ${s.width}w`).join(', ');
+  return `<img src="${escAttr(largest)}" srcset="${escAttr(srcset)}" sizes="${w}px" width="${w}" height="${h}" alt="${escAttr(item.altText || '')}">`;
+}
+
+async function writeToFolder(dir, name, data, mime, overwrite) {
+  const finalName = overwrite ? name : await uniqueName(dir, name);
+  const handle = await dir.getFileHandle(finalName, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(new Blob([data], { type: mime || 'application/octet-stream' }));
+  await writable.close();
+  return finalName;
+}
+
+async function runResizeJob(job, update) {
+  const seen = new Set();
+  const candidates = job.items.filter((i) => !seen.has(i.url) && seen.add(i.url));
+  const folder = job.destination === 'folder' ? await writableFolder() : null;
+  if (job.destination === 'folder' && !folder) throw new Error('Lost access to the target folder — choose it again.');
+
+  const results = {};
+  const zipEntries = [];
+  const snippets = [];
+  const failed = [];
+  let fileCount = 0;
+
+  for (let idx = 0; idx < candidates.length; idx++) {
+    const item = candidates[idx];
+    update({ status: `Resizing ${idx + 1}/${candidates.length}: ${item.originalFilename}…`, results });
+    try {
+      const widths = variantWidths(item);
+      if (!widths.length) throw new Error('already no larger than it is displayed');
+      const raw = await fetchItemBuffer(item, job.tabId);
+      const variants = [];
+      for (const width of widths) {
+        const res = await resizeInWorker(raw.slice(0), width);
+        const data = new Uint8Array(res.buffer);
+        let name = variantName(item.originalFilename, res.width);
+        if (folder) name = await writeToFolder(folder, name, data, res.mime, job.overwrite);
+        else zipEntries.push({ name: safeZipPath(name), data });
+        variants.push({ name, width: res.width, height: res.height, bytes: data.length });
+        fileCount++;
+      }
+      const snippet = srcsetSnippet(item, variants);
+      snippets.push(`<!-- ${item.originalFilename} (${item.intrinsicW}×${item.intrinsicH}, shown at ${item.renderedW}px) -->\n${snippet}`);
+      results[`resize|${item.url}`] = { note: 'resized', beforeBytes: raw.byteLength, variants, snippet };
+    } catch (err) {
+      failed.push(`${item.originalFilename} (${err.message || err})`);
+    }
+  }
+
+  const failNote = failed.length ? ` · ${failed.length} failed: ${failed.join(', ')}` : '';
+  if (!fileCount) return { status: `Nothing resized${failNote}`, results };
+
+  const snippetsHtml = new TextEncoder().encode(`<!-- srcset snippets from Image Size Checker Pro -->\n${snippets.join('\n\n')}\n`);
+  const files = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+  if (folder) {
+    if (candidates.length > 1) await writeToFolder(folder, 'srcset-snippets.html', snippetsHtml, 'text/html', job.overwrite);
+    return { status: `Saved ${files} to ${folder.name ? `/${folder.name}/` : 'the target folder'}${failNote}`, results };
+  }
+  zipEntries.push({ name: 'srcset-snippets.html', data: snippetsHtml });
+  const zipBytes = new Uint8Array(await makeZip(zipEntries).arrayBuffer());
+  const zipName =
+    candidates.length === 1
+      ? `${candidates[0].originalFilename.replace(/\.[^.]+$/, '')}-resized.zip`
+      : `${hostSlugOf(job.pageUrl)}-resized-images.zip`;
+  const saved = await save(zipBytes, zipName, 'application/zip', job);
+  if (saved.cancelled) return { status: 'Save cancelled.', results };
+  return { status: `Saved ZIP (${files} + srcset snippets)${failNote}`, results };
+}
+
+function hostSlugOf(pageUrl) {
+  try {
+    return new URL(pageUrl).hostname.replace(/[^a-z0-9-]+/gi, '-') || 'site';
+  } catch (_) {
+    return 'site';
+  }
+}
+
 // Dry run used for the savings estimate: compresses without saving and reports the real result.
 export async function estimateItem(item, tabId, bytesPerPixel) {
   const r = await compressItem(item, { tabId, bytesPerPixel });
@@ -201,6 +323,8 @@ export async function runJob(job, update) {
   const record = (item, r) => {
     results[item.url] = { beforeBytes: r.beforeBytes, afterBytes: r.afterBytes, savedPct: r.savedPct, note: r.note, reason: r.reason, width: r.width, height: r.height };
   };
+
+  if (job.mode === 'resize') return runResizeJob(job, update);
 
   if (job.mode === 'single') {
     const item = job.items[0];
@@ -256,11 +380,7 @@ export async function runJob(job, update) {
 
   update({ status: 'Building ZIP…', results });
   const zipBytes = new Uint8Array(await makeZip(entries).arrayBuffer());
-  let hostSlug = 'site';
-  try {
-    hostSlug = new URL(job.pageUrl).hostname.replace(/[^a-z0-9-]+/gi, '-') || 'site';
-  } catch (_) {}
-  const saved = await save(zipBytes, `${hostSlug}-optimized-images.zip`, 'application/zip', job);
+  const saved = await save(zipBytes, `${hostSlugOf(job.pageUrl)}-optimized-images.zip`, 'application/zip', job);
   if (saved.cancelled) return { status: 'Save cancelled.', results };
   const pct = totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
   const files = `${entries.length} ${entries.length === 1 ? 'file' : 'files'}`;

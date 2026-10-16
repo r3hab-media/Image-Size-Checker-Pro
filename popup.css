@@ -712,3 +712,38 @@ kbd {
   color: #7dd3fc;
   font-size: 10.5px;
 }
+
+.batch-compress-row {
+  flex-wrap: wrap;
+}
+
+.batch-compress-row .compression-status {
+  flex-basis: 100%;
+}
+
+.resize-all-btn {
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  border-color: rgba(167, 139, 250, 0.4);
+}
+
+.resize-result {
+  margin-top: 4px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  color: #ddd6fe;
+  font-size: 10.5px;
+}
+
+.snippet {
+  margin: 4px 0;
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

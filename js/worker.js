@@ -1,4 +1,4 @@
-import { optimizePngLossless, isAnimatedPng } from './png.js';
+import { optimizePngLossless, isAnimatedPng, encodeRgbaPng } from './png.js';
 import { readJpegInfo, transplantJpegMetadata } from './jpeg-meta.js';
 
 // Drop-in replacement rules: the output always keeps the original format and pixel dimensions.
@@ -208,11 +208,64 @@ export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, t
   return result(out, kind, { note, target: goal, width, height });
 }
 
+const RESIZE_QUALITY = 85;
+
+// Resizes to `width` (height keeps the intrinsic aspect ratio) in the original format, for srcset
+// variants. Never upscales. Color data is kept the same way as compression keeps it.
+export async function resizeImageBuffer({ buffer, width, quality = RESIZE_QUALITY }) {
+  const bytes = new Uint8Array(buffer);
+  const kind = sniff(bytes);
+  if (!['jpeg', 'png', 'webp'].includes(kind)) {
+    throw new Error(`${(kind || 'This').toUpperCase()} images can't be resized without changing their format.`);
+  }
+  if ((kind === 'png' && isAnimatedPng(bytes)) || (kind === 'webp' && webpChunks(bytes).includes('ANIM'))) {
+    throw new Error('Animated images are not resized.');
+  }
+
+  // PNG color chunks and RGB JPEG ICC profiles are carried over, so decode those without conversion.
+  let keepIcc = kind === 'png';
+  if (kind === 'jpeg') {
+    const info = readJpegInfo(bytes);
+    keepIcc = info.icc.length > 0 && info.iccIsRgb && info.components === 3;
+  }
+  const blob = new Blob([bytes], { type: MIME[kind] });
+  const probe = await createImageBitmap(blob); // natural size after EXIF orientation
+  const origWidth = probe.width;
+  const origHeight = probe.height;
+  probe.close();
+
+  const w = Math.max(1, Math.min(Math.round(width), origWidth));
+  const h = Math.max(1, Math.round((origHeight * w) / origWidth));
+  const bitmap = await createImageBitmap(blob, {
+    resizeWidth: w,
+    resizeHeight: h,
+    resizeQuality: 'high',
+    colorSpaceConversion: keepIcc ? 'none' : 'default',
+    premultiplyAlpha: 'none'
+  });
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+
+  let out;
+  if (kind === 'png') {
+    const { data } = ctx.getImageData(0, 0, w, h);
+    out = await encodeRgbaPng({ width: w, height: h, rgba: new Uint8Array(data.buffer), sourcePng: bytes });
+  } else if (kind === 'jpeg') {
+    out = transplantJpegMetadata(bytes, await encodeCanvas(canvas, 'image/jpeg', quality), { keepIcc });
+  } else {
+    out = await encodeCanvas(canvas, 'image/webp', quality);
+    if (!out) throw new Error('This browser cannot save WebP files.');
+  }
+  return result(out, kind, { note: 'resized', width: w, height: h, origWidth, origHeight });
+}
+
 if (typeof self !== 'undefined' && typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
   self.onmessage = async (event) => {
     const { id } = event.data;
     try {
-      const res = await compressImageBuffer(event.data);
+      const res = await (event.data.op === 'resize' ? resizeImageBuffer : compressImageBuffer)(event.data);
       self.postMessage({ id, ok: true, ...res }, [res.buffer]);
     } catch (err) {
       const message = err && err.message ? err.message : 'Could not compress this image.';
