@@ -182,7 +182,7 @@
     1.0
   );
 
-  // 4. Unoptimized store-mode PNG (360×240 => ~348 KB uncompressed, shrinks to <10 KB losslessly!)
+  // 4. Unoptimized store-mode PNG (360×240, ~340 KB uncompressed)
   document.getElementById('imgOversized').src = makeUnoptimizedPngDataUrl(360, 240);
 
   // 5. Upscaled tiny image

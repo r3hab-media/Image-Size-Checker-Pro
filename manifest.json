@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Image Size Checker Pro",
-  "version": "3.1.0",
-  "description": "Inspect and losslessly compress oversized webpage images. Preserves original dimensions, formats, and filenames with single or ZIP download.",
+  "version": "3.2.0",
+  "description": "Audit page images (size, dimensions, aspect, alt, CLS/LCP) and compress them as drop-in replacements: same format, dimensions and filename.",
   "permissions": [
-    "activeTab",
     "scripting",
     "storage",
     "downloads"

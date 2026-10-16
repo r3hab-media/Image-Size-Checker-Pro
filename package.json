@@ -1,22 +1,18 @@
 {
-  "name": "image-squeezer",
-  "version": "1.0.0",
+  "name": "image-size-checker-pro",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
-  "description": "Browser-only image compressor PWA",
+  "description": "Chrome extension that audits page images and compresses them as drop-in replacements",
   "license": "MIT",
   "author": "Jared Newnam",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "node build.mjs"
+    "test": "node tests/run.mjs"
   },
-  "dependencies": {
-    "@jsquash/jpeg": "^1.6.0",
-    "@jsquash/oxipng": "^2.3.0",
-    "@panda-ai/imagequant": "^0.2.0",
-    "esbuild": "^0.28.2",
-    "libheif-js": "^1.23.2"
+  "devDependencies": {
+    "puppeteer-core": "^24.43.1"
   }
 }
