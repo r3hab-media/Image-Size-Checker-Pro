@@ -330,7 +330,7 @@ async function compressAllTooLargeToZip() {
     }
 
     const notes = [];
-    if (skipped.length) notes.push(`${skipped.length} already optimal or format kept`);
+    if (skipped.length) notes.push(`${skipped.length} already optimal or format kept: ${skipped.join(', ')}`);
     if (failed.length) notes.push(`${failed.length} failed: ${failed.join(', ')}`);
     const suffix = notes.length ? ` · ${notes.join(' · ')}` : '';
 
@@ -351,7 +351,7 @@ async function compressAllTooLargeToZip() {
     if (saved.cancelled) {
       els.compressionStatus.textContent = 'Save cancelled.';
     } else {
-      els.compressionStatus.textContent = `Saved ZIP (${zipEntries.length} files): ${formatBytes(totalBefore)} → ${formatBytes(totalAfter)} (-${pctTotal}%)${suffix}`;
+      els.compressionStatus.textContent = `Saved ZIP (${zipEntries.length} ${zipEntries.length === 1 ? 'file' : 'files'}): ${formatBytes(totalBefore)} → ${formatBytes(totalAfter)} (-${pctTotal}%)${suffix}`;
     }
   } catch (err) {
     els.compressionStatus.textContent = `Error: ${err.message || err}`;

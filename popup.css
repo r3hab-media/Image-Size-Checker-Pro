@@ -5,7 +5,7 @@
 }
 
 body {
-  width: 520px;
+  width: 750px;
   min-height: 560px;
   max-height: 600px;
   display: flex;
@@ -58,7 +58,7 @@ body {
 .brand-sub {
   font-size: 10.5px;
   color: #94a3b8;
-  max-width: 230px;
+  max-width: 420px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -294,11 +294,10 @@ input:checked + .slider:before {
   font-size: 10.5px;
   color: #6ee7b7;
   font-weight: 600;
-  max-width: 175px;
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 /* Controls Bar */
@@ -439,8 +438,8 @@ input:checked + .slider:before {
 }
 
 .thumb-wrap {
-  width: 44px;
-  height: 44px;
+  width: 64px;
+  height: 64px;
   border-radius: 6px;
   background: #0f172a;
   border: 1px solid rgba(148, 163, 184, 0.2);
