@@ -33,6 +33,7 @@ A result is only used when it is smaller than the original; otherwise the origin
 - **Default:** each save opens the native Save-As dialog.
 - **Choose Folder…** opens a small window where you pick a folder on disk (for example your site's `public/images/`). The folder is remembered until you click **Use Save-As**. If Chrome's access to the folder lapses, you are asked again or the extension falls back to Save-As.
 - Existing files are not overwritten unless you tick **Overwrite files with the same name** (otherwise a copy such as `hero (1).png` is written).
+- Compression runs in the background, so you can close the side panel or switch tabs while a batch runs; reopen the panel on that tab to see the result.
 - **Compress & Download All Too Large to ZIP** bundles every flagged image. Images that fail to download, or that are already optimal, are skipped and listed in the status line; the rest of the batch still completes.
 
 ## Load locally in Chrome
@@ -49,6 +50,5 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 ## Known limitations
 
-- Keep the side panel open while a batch is compressing; closing it stops the batch.
 - Images inside iframes are not scanned.
 - Inline SVGs are saved as their markup only; styles applied by the page's CSS are not included.
