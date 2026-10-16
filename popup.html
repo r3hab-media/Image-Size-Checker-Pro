@@ -146,6 +146,35 @@
     </div>
   </footer>
 
+  <div class="preview-modal hidden" id="previewModal" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+    <div class="preview-box">
+      <div class="preview-head">
+        <strong id="previewTitle">Preview</strong>
+        <div class="preview-head-btns">
+          <button class="icon-btn" id="previewZoomBtn" title="Toggle actual pixels (1:1) to inspect compression artifacts">1:1</button>
+          <button class="icon-btn" id="previewCloseBtn" title="Close (Esc)">✕</button>
+        </div>
+      </div>
+      <div class="compare" id="compare">
+        <div class="compare-stage" id="compareStage">
+          <img id="beforeImg" alt="Original" />
+          <img id="afterImg" class="after" alt="Compressed" />
+          <div class="split-line" id="splitLine"></div>
+          <span class="compare-label left">Original</span>
+          <span class="compare-label right">Compressed</span>
+        </div>
+      </div>
+      <input type="range" id="splitRange" class="split-range" min="0" max="100" value="50" aria-label="Before/after split" />
+      <div class="preview-controls">
+        <label>Quality <input type="range" id="qualityRange" min="40" max="96" value="92" /> <strong id="qualityVal">92</strong></label>
+        <span class="preview-stats" id="previewStats">Loading…</span>
+      </div>
+      <div class="preview-actions">
+        <button class="compress-all-btn" id="previewSaveBtn" disabled>Save at quality 92</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="popup.js"></script>
 </body>
 </html>

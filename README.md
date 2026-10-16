@@ -26,6 +26,8 @@ Pages are scanned when you open the side panel or press **Alt+Shift+I**. Turn on
 | WebP (lossy) | **High-quality lossy re-encode.** Lossless, animated, or color-profiled WebP files are left unchanged. |
 | GIF, BMP, ICO, AVIF, HEIC, animated PNG | **Left unchanged.** The browser cannot re-encode these without changing the file type. |
 
+For JPEG and WebP, **🔍 Preview** opens a before/after comparison: drag the split slider, toggle **1:1** to inspect actual pixels, and move the **Quality** slider (40–96) to see the resulting size live. **Save at quality N** saves at exactly that quality; this is the only way to go below the automatic minimum of 82.
+
 A result is only used when it is smaller than the original; otherwise the original is reported as already optimal and nothing is saved.
 
 After each scan, the compressible images are test-compressed in the background (your own compress and ZIP clicks always go first). **Achievable Savings** is the measured total, and each image card says whether compression will help. "Too Large" is split into *compressible* (a heavy PNG, JPEG, WebP or SVG) and *oversized px* (pixel dimensions larger than displayed, which only resizing can fix).

@@ -5,7 +5,8 @@ import { readJpegInfo, transplantJpegMetadata } from './jpeg-meta.js';
 // PNG and SVG are optimized losslessly. JPEG and WebP are re-encoded at high quality (lossy),
 // and the result is only used when it is actually smaller.
 const DEFAULT_QUALITY = 92;
-const MIN_QUALITY = 82; // never drop below high visual quality
+const MIN_QUALITY = 82; // never drop below high visual quality on its own
+const MIN_CHOSEN_QUALITY = 40; // lowest a user may pick explicitly in the preview
 const MAX_QUALITY = 96;
 const TARGET_STEPS = 6;
 
@@ -150,7 +151,9 @@ function result(out, kind, extra) {
   };
 }
 
-export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, target = 0 }) {
+// chosenQuality: a quality the user picked in the preview. It may go below MIN_QUALITY and
+// disables the size target, since the user has already judged the result.
+export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, target = 0, chosenQuality }) {
   const bytes = new Uint8Array(buffer);
   const kind = sniff(bytes);
   if (!kind) throw new Error('Unsupported image format.');
@@ -166,8 +169,13 @@ export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, t
     return result(out, kind, { note: out.length < bytes.length ? 'compressed' : 'kept' });
   }
 
-  const q = Number.isFinite(quality) ? Math.min(MAX_QUALITY, Math.max(MIN_QUALITY, Math.round(quality))) : DEFAULT_QUALITY;
-  const goal = Number.isFinite(target) && target > 0 ? Math.round(target) : 0;
+  const chosen = Number.isFinite(chosenQuality);
+  const q = chosen
+    ? Math.min(MAX_QUALITY, Math.max(MIN_CHOSEN_QUALITY, Math.round(chosenQuality)))
+    : Number.isFinite(quality)
+      ? Math.min(MAX_QUALITY, Math.max(MIN_QUALITY, Math.round(quality)))
+      : DEFAULT_QUALITY;
+  const goal = !chosen && Number.isFinite(target) && target > 0 ? Math.round(target) : 0;
   let out = null;
   let note = 'compressed';
   let width = 0;
