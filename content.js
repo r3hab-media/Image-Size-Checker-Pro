@@ -96,6 +96,8 @@
     return `${ratio.toFixed(2)}:1`;
   }
 
+  const COMPRESSIBLE_FORMATS = new Set(['PNG', 'JPEG', 'WEBP', 'SVG']);
+  const WEIGHT_CODES = new Set(['FILE_OVER_CAP', 'FILE_OVER_RECOMMENDED', 'LEGACY_FORMAT']);
   const KNOWN_EXT = /\.(avif|webp|png|jpe?g|gif|svg|bmp|ico)$/i;
 
   function urlPath(url) {
@@ -545,6 +547,11 @@
       }
     }
 
+    // Compression only helps a heavy file in a format we can re-encode; oversized dimensions need resizing.
+    const weightIssue = issues.some((i) => WEIGHT_CODES.has(i.code));
+    const needsCompression = weightIssue && COMPRESSIBLE_FORMATS.has(format);
+    const needsResize = issues.some((i) => i.code === 'OVERSIZED_DIMENSIONS');
+
     const baseId = stableElementId(el);
     const id = bgIndex ? `${baseId}-bg${bgIndex}` : baseId;
     const item = {
@@ -562,6 +569,8 @@
       savingsBytes,
       savingsFormatted: savingsBytes > 0 ? formatBytes(savingsBytes) : '0 KB',
       isTooLarge,
+      needsCompression,
+      needsResize,
       renderedW,
       renderedH,
       intrinsicW,
@@ -1223,6 +1232,8 @@
     const errorCount = analyzedItems.filter((i) => i.severity === 'error').length;
     const warnCount = analyzedItems.filter((i) => i.severity === 'warn').length;
     const tooLargeCount = analyzedItems.filter((i) => i.isTooLarge).length;
+    const compressibleCount = analyzedItems.filter((i) => i.needsCompression).length;
+    const oversizedCount = analyzedItems.filter((i) => i.needsResize).length;
 
     return {
       ok: true,
@@ -1239,7 +1250,9 @@
         errorCount,
         warnCount,
         issueCount: errorCount + warnCount,
-        tooLargeCount
+        tooLargeCount,
+        compressibleCount,
+        oversizedCount
       },
       items: analyzedItems
     };

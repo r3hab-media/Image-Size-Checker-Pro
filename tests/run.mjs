@@ -39,6 +39,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   pipe: true,
+  protocolTimeout: 90000, // fail hung tests in 90s instead of the 180s default
   enableExtensions: true,
   headless: process.env.HEADFUL ? false : true,
   args: ['--no-first-run', '--no-default-browser-check']

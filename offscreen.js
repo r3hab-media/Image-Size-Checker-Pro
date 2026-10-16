@@ -1,37 +1,58 @@
-import { runJob } from './js/jobs.js';
+import { runJob, estimateItem } from './js/jobs.js';
 
 // Runs compression jobs one at a time, independent of whether the side panel is open.
-// Progress goes to the service worker, which stores it for the panel.
-const queue = [];
+// User jobs always run before savings estimates, which are checked one image at a time so a
+// click never waits behind a whole page of estimates.
+const jobs = [];
+const estimates = [];
 let running = false;
 
+function send(message) {
+  chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+}
+
 function report(job, state) {
-  chrome.runtime.sendMessage({ type: 'JOB_UPDATE', job: { id: job.id, mode: job.mode, tabId: job.tabId, ...state } }, () => {
-    void chrome.runtime.lastError;
-  });
+  send({ type: 'JOB_UPDATE', job: { id: job.id, mode: job.mode, tabId: job.tabId, ...state } });
+}
+
+async function runNextJob(job) {
+  report(job, { state: 'running', status: 'Starting…' });
+  try {
+    const done = await runJob(job, (partial) => report(job, { state: 'running', ...partial }));
+    report(job, { state: 'done', ...done });
+  } catch (err) {
+    report(job, { state: 'error', status: `Error: ${err.message || err}` });
+  }
+}
+
+async function runNextEstimate({ tabId, item, bytesPerPixel }) {
+  let result;
+  try {
+    result = await estimateItem(item, tabId, bytesPerPixel);
+  } catch (err) {
+    result = { error: String(err.message || err) };
+  }
+  send({ type: 'ESTIMATE_UPDATE', tabId, url: item.url, cacheKey: item.cacheKey, result });
 }
 
 async function drain() {
   if (running) return;
   running = true;
-  while (queue.length) {
-    const job = queue.shift();
-    report(job, { state: 'running', status: 'Starting…' });
-    try {
-      const done = await runJob(job, (partial) => report(job, { state: 'running', ...partial }));
-      report(job, { state: 'done', ...done });
-    } catch (err) {
-      report(job, { state: 'error', status: `Error: ${err.message || err}` });
-    }
+  while (jobs.length || estimates.length) {
+    if (jobs.length) await runNextJob(jobs.shift());
+    else await runNextEstimate(estimates.shift());
   }
   running = false;
-  chrome.runtime.sendMessage({ type: 'JOBS_IDLE' }, () => void chrome.runtime.lastError);
+  send({ type: 'JOBS_IDLE' });
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.target === 'offscreen' && msg.type === 'RUN_JOB') {
-    queue.push(msg.job);
-    drain();
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!msg || msg.target !== 'offscreen') return false;
+  if (msg.type === 'RUN_JOB') jobs.push(msg.job);
+  if (msg.type === 'RUN_ESTIMATES') {
+    for (const item of msg.items) estimates.push({ tabId: msg.tabId, item, bytesPerPixel: msg.bytesPerPixel });
   }
+  sendResponse({ ok: true }); // acknowledgement: the service worker retries if this never arrives
+  drain();
   return false;
 });

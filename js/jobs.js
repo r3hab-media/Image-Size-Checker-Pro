@@ -188,6 +188,12 @@ async function compressItem(item, job) {
   };
 }
 
+// Dry run used for the savings estimate: compresses without saving and reports the real result.
+export async function estimateItem(item, tabId, bytesPerPixel) {
+  const r = await compressItem(item, { tabId, bytesPerPixel });
+  return { beforeBytes: r.beforeBytes, afterBytes: r.afterBytes, savedPct: r.savedPct, note: r.note, reason: r.reason, unchanged: r.unchanged };
+}
+
 // Runs one job, reporting progress through update(partialState).
 // job: { id, mode: 'single' | 'zip', items, pageUrl, tabId, bytesPerPixel, destination, overwrite }
 export async function runJob(job, update) {

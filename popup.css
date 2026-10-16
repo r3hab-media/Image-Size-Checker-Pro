@@ -701,3 +701,14 @@ kbd {
     display: none;
   }
 }
+
+.estimate-pill {
+  display: inline-flex;
+  margin-top: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+  font-size: 10.5px;
+}

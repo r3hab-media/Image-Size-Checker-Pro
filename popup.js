@@ -19,6 +19,7 @@ const els = {
   kpiWeight: document.getElementById('kpiWeight'),
   kpiDpr: document.getElementById('kpiDpr'),
   kpiSavings: document.getElementById('kpiSavings'),
+  kpiSavingsSub: document.getElementById('kpiSavingsSub'),
   kpiTooLarge: document.getElementById('kpiTooLarge'),
   kpiIssueSplit: document.getElementById('kpiIssueSplit'),
   targetFolderLabel: document.getElementById('targetFolderLabel'),
@@ -106,7 +107,7 @@ async function startJob(mode, items) {
 }
 
 function setJobRunning(running) {
-  els.compressAllZipBtn.disabled = running || !(currentState && currentState.items.some((i) => i.isTooLarge));
+  els.compressAllZipBtn.disabled = running || zipCandidates().length === 0;
   els.compressAllZipBtn.dataset.running = running ? '1' : '';
 }
 
@@ -116,13 +117,15 @@ function applyJob(job, results) {
   for (const [url, r] of Object.entries(results || {})) compressedResults.set(url, r);
   const finished = job.state === 'done' || job.state === 'error';
   setJobRunning(!finished);
-  if (finished) {
-    renderDashboard();
-    const resolve = jobWaiters.get(job.id);
-    if (resolve) {
-      jobWaiters.delete(job.id);
-      resolve(job);
-    }
+  if (finished) renderDashboard();
+}
+
+function resolveJobWaiter(job) {
+  if (job.state !== 'done' && job.state !== 'error') return;
+  const resolve = jobWaiters.get(job.id);
+  if (resolve) {
+    jobWaiters.delete(job.id);
+    resolve(job);
   }
 }
 
@@ -135,14 +138,17 @@ async function restoreJobState(tabId) {
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === 'JOB_UPDATE' && msg.job.tabId === activeTabId) applyJob(msg.job, msg.job.results);
+  if (!msg || msg.type !== 'JOB_UPDATE') return false;
+  // The panel may now show another tab; callers waiting on this job still need to hear it finished.
+  resolveJobWaiter(msg.job);
+  if (msg.job.tabId === activeTabId) applyJob(msg.job, msg.job.results);
   return false;
 });
 
 // Batch compress all oversized images into a single ZIP; resolves when the job finishes.
 async function compressAllTooLargeToZip() {
   if (!currentState || !currentState.items) return;
-  const items = currentState.items.filter((i) => i.isTooLarge);
+  const items = zipCandidates();
   if (items.length === 0) {
     els.compressionStatus.textContent = 'No oversized images found!';
     return;
@@ -171,6 +177,7 @@ function sendToTab(tabId, message) {
 
 function resetDashboard() {
   currentState = null;
+  estimates.clear();
   els.pageHostLabel.textContent = 'Scanning active tab...';
   els.kpiTotal.textContent = '0';
   els.kpiBreakdown.textContent = '0 IMG · 0 BG · 0 SVG';
@@ -225,6 +232,7 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
   currentState = state;
   renderDashboard();
   restoreJobState(tabId);
+  requestEstimates(tabId);
 }
 
 function populateSettingsInputs(s) {
@@ -300,6 +308,74 @@ function compressResultHtml(info) {
     </div>`;
 }
 
+// ---------- measured savings (background dry-run compression) ----------
+
+const estimates = new Map(); // image URL -> { beforeBytes, afterBytes, savedPct, unchanged, reason } or { error }
+
+function uniqueByUrl(list) {
+  const seen = new Set();
+  return list.filter((i) => !seen.has(i.url) && seen.add(i.url));
+}
+
+const compressibleItems = () => (currentState ? uniqueByUrl(currentState.items.filter((i) => i.needsCompression)) : []);
+
+// Images worth putting in the ZIP: compressible, minus those a dry run proved can't shrink.
+function zipCandidates() {
+  return compressibleItems().filter((i) => !estimates.get(i.url)?.unchanged);
+}
+
+async function requestEstimates(tabId) {
+  const items = compressibleItems();
+  if (!items.length) return;
+  const resp = await new Promise((resolve) =>
+    chrome.runtime.sendMessage(
+      { type: 'START_ESTIMATE', tabId, items, bytesPerPixel: currentState.settings?.bytesPerPixelTarget },
+      (r) => {
+        void chrome.runtime.lastError;
+        resolve(r);
+      }
+    )
+  );
+  if (tabId !== activeTabId || !resp || !resp.ok) return;
+  for (const [url, result] of Object.entries(resp.cached)) estimates.set(url, result);
+  renderDashboard();
+}
+
+function renderSavingsKpi() {
+  const items = compressibleItems();
+  let saved = 0;
+  let measured = 0;
+  for (const item of items) {
+    const e = estimates.get(item.url);
+    if (!e) continue;
+    measured++;
+    if (!e.error) saved += Math.max(0, e.beforeBytes - e.afterBytes);
+  }
+  els.kpiSavings.textContent = formatBytes(saved);
+  els.kpiSavingsSub.textContent =
+    measured < items.length ? `Measuring ${measured}/${items.length}…` : items.length ? 'Measured by test compression' : 'Nothing to compress';
+}
+
+function estimateHtml(item) {
+  const e = estimates.get(item.url);
+  if (e && !e.error) {
+    if (e.unchanged) return `<div class="estimate-pill">ℹ️ Compression can't shrink this: ${escapeHtml(e.reason || 'already optimal')}</div>`;
+    return `<div class="estimate-pill">💡 Compression can save ${formatBytes(e.beforeBytes - e.afterBytes)} (-${e.savedPct}%)</div>`;
+  }
+  if (item.needsResize && !item.needsCompression) {
+    return `<div class="estimate-pill">ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed).</div>`;
+  }
+  return '';
+}
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === 'ESTIMATE_UPDATE' && msg.tabId === activeTabId) {
+    estimates.set(msg.url, msg.result);
+    renderDashboard();
+  }
+  return false;
+});
+
 function renderDashboard() {
   if (!currentState) return;
   const { summary, items, settings, pageUrl, dpr } = currentState;
@@ -317,16 +393,17 @@ function renderDashboard() {
   const bgCount = items.filter((i) => i.kind === 'bg').length;
   const svgCount = items.filter((i) => i.kind === 'svg').length;
   const tooLargeItems = items.filter((i) => i.isTooLarge);
+  const zipItems = zipCandidates();
 
   els.kpiTotal.textContent = String(summary.totalImages);
   els.kpiBreakdown.textContent = `${imgCount} IMG · ${bgCount} BG · ${svgCount} SVG`;
   els.kpiWeight.textContent = summary.totalWeightFormatted;
   els.kpiDpr.textContent = `Display DPR ${Number(dpr || 1).toFixed(1)}x`;
-  els.kpiSavings.textContent = summary.totalSavingsFormatted;
+  renderSavingsKpi();
   els.kpiTooLarge.textContent = String(tooLargeItems.length);
-  els.kpiIssueSplit.textContent = `${summary.errorCount} critical · ${summary.warnCount} warn`;
-  els.tooLargeCountBadge.textContent = String(tooLargeItems.length);
-  els.compressAllZipBtn.disabled = tooLargeItems.length === 0 || els.compressAllZipBtn.dataset.running === '1';
+  els.kpiIssueSplit.textContent = `${summary.compressibleCount ?? 0} compressible · ${summary.oversizedCount ?? 0} oversized px`;
+  els.tooLargeCountBadge.textContent = String(zipItems.length);
+  els.compressAllZipBtn.disabled = zipItems.length === 0 || els.compressAllZipBtn.dataset.running === '1';
 
   const visibleItems = filterAndSortItems(items);
   if (visibleItems.length === 0) {
@@ -344,7 +421,7 @@ function renderDashboard() {
       const statusLabel =
         item.severity === 'error' ? 'Error' : item.severity === 'warn' ? 'Warn' : 'OK';
 
-      const compPillHtml = compressResultHtml(compressedResults.get(item.url));
+      const compPillHtml = compressResultHtml(compressedResults.get(item.url)) || estimateHtml(item);
 
       const issuesHtml =
         item.issues.length > 0

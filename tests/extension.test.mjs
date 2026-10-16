@@ -427,7 +427,7 @@ export const tests = {
     assert(!names.some((n) => n.endsWith('.gif')), 'GIF should be skipped (format kept)');
     assert(!names.some((n) => n.includes('..') || n.startsWith('/')), `unsafe names ${names}`);
     assert(/failed: flaky\.png/.test(result.status), `status should report the failure: ${result.status}`);
-    assert(/already optimal or format kept/.test(result.status), `status should report skipped: ${result.status}`);
+    assert(!/big.gif/.test(result.status), 'GIF is not compressible and should not even be attempted: ' + result.status);
     await closeAll(page, popup);
   },
 
