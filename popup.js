@@ -9,6 +9,7 @@ let sortMode = 'severity';
 let activeTabId = null;
 let overwriteExisting = false;
 let webpCopies = false;
+let lossyPng = false;
 const compressedResults = new Map(); // image URL -> { beforeBytes, afterBytes, savedPct, note, width, height }
 
 const els = {
@@ -30,6 +31,7 @@ const els = {
   overwriteRow: document.getElementById('overwriteRow'),
   overwriteCheck: document.getElementById('overwriteCheck'),
   webpCheck: document.getElementById('webpCheck'),
+  lossyPngCheck: document.getElementById('lossyPngCheck'),
   compressAllZipBtn: document.getElementById('compressAllZipBtn'),
   resizeAllBtn: document.getElementById('resizeAllBtn'),
   resizeCountBadge: document.getElementById('resizeCountBadge'),
@@ -97,6 +99,7 @@ async function startJob(mode, items, options = {}) {
     destination,
     overwrite: overwriteExisting,
     webp: webpCopies,
+    lossyPng,
     ...options
   };
   const resp = await new Promise((resolve) =>
@@ -348,7 +351,7 @@ function compressResultHtml(item, info) {
   }
   return `<div class="compress-result-pill">
       ✓ ${formatBytes(info.beforeBytes)} → <strong>${formatBytes(info.afterBytes)}</strong>
-      (-${info.savedPct}% · ${info.width}×${info.height}px kept)
+      (-${info.savedPct}% · ${info.width}×${info.height}px kept${info.note === 'compressed-lossy' ? ` · ${escapeHtml(info.reason)}` : ''})
     </div>${webp}`;
 }
 
@@ -374,7 +377,7 @@ async function requestEstimates(tabId) {
   if (!items.length) return;
   const resp = await new Promise((resolve) =>
     chrome.runtime.sendMessage(
-      { type: 'START_ESTIMATE', tabId, items, bytesPerPixel: currentState.settings?.bytesPerPixelTarget },
+      { type: 'START_ESTIMATE', tabId, items, bytesPerPixel: currentState.settings?.bytesPerPixelTarget, lossyPng },
       (r) => {
         void chrome.runtime.lastError;
         resolve(r);
@@ -643,6 +646,15 @@ els.webpCheck.addEventListener('change', () => {
   renderDashboard();
 });
 
+els.lossyPngCheck.addEventListener('change', () => {
+  lossyPng = els.lossyPngCheck.checked;
+  chrome.storage.local.set({ iscProLossyPng: lossyPng });
+  // Estimates depend on this option, so measure again.
+  estimates.clear();
+  renderDashboard();
+  if (currentState) requestEstimates(activeTabId);
+});
+
 els.resizeAllBtn.addEventListener('click', () => {
   resizeAllOversized();
 });
@@ -811,11 +823,13 @@ els.copyMdBtn.addEventListener('click', async () => {
 // The folder may be picked in another window while this popup stays open.
 window.addEventListener('focus', refreshFolderLabel);
 
-chrome.storage.local.get(['iscProOverwrite', 'iscProWebp'], (res) => {
+chrome.storage.local.get(['iscProOverwrite', 'iscProWebp', 'iscProLossyPng'], (res) => {
   overwriteExisting = Boolean(res && res.iscProOverwrite);
   els.overwriteCheck.checked = overwriteExisting;
   webpCopies = Boolean(res && res.iscProWebp);
   els.webpCheck.checked = webpCopies;
+  lossyPng = Boolean(res && res.iscProLossyPng);
+  els.lossyPngCheck.checked = lossyPng;
   renderDashboard();
 });
 refreshFolderLabel();

@@ -319,6 +319,48 @@ export const tests = {
       if (!threw) throw new Error('GIF resize should fail');
     }),
 
+  'lossy PNG: many-color graphic is quantized, smaller, and close to the original': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.canvasPng(500, 300, h.antialiasedGraphic);
+      const lossless = await engine.compressImageBuffer({ buffer: src.buffer.slice(0) });
+      const lossy = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), lossyPng: true });
+      const out = new Uint8Array(lossy.buffer);
+      if (lossy.note !== 'compressed-lossy') throw new Error(`note ${lossy.note}: ${lossy.reason}`);
+      const dec = await png.decodePng(out);
+      if (dec.colorType !== 3 || dec.width !== 500 || dec.height !== 300) throw new Error(`type ${dec.colorType} ${dec.width}x${dec.height}`);
+      if (!(out.length < lossless.buffer.byteLength * 0.8)) throw new Error(`lossy ${out.length} vs lossless ${lossless.buffer.byteLength}`);
+      const score = await h.psnrBetween(src, out);
+      if (score < 36) throw new Error('psnr ' + score);
+    }),
+
+  'lossy PNG: noise that would degrade is rejected and stays bit-exact lossless': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.canvasPng(200, 150, h.opaqueNoise);
+      const res = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), lossyPng: true });
+      if (res.note === 'compressed-lossy') throw new Error('noise should not be quantized');
+      if (res.note !== 'kept') await h.assertSamePixels(src, new Uint8Array(res.buffer));
+    }),
+
+  'lossy PNG: fully transparent and fully opaque pixels keep their alpha': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.canvasPng(300, 300, h.transparentLogo);
+      const res = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), lossyPng: true });
+      if (res.note !== 'compressed-lossy') throw new Error(`note ${res.note}: ${res.reason}`);
+      const [a, b] = await Promise.all([h.decodeRgba(src), h.decodeRgba(new Uint8Array(res.buffer))]);
+      for (let i = 3; i < a.length; i += 4) {
+        if ((a[i] === 0) !== (b[i] === 0)) throw new Error('transparent pixel changed at ' + i);
+        if ((a[i] === 255) !== (b[i] === 255)) throw new Error('opaque pixel changed at ' + i);
+      }
+    }),
+
+  'lossy PNG: an image that already fits a palette stays lossless': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.storedPng(120, 80);
+      const res = await engine.compressImageBuffer({ buffer: src.buffer.slice(0), lossyPng: true });
+      if (res.note === 'compressed-lossy') throw new Error('8-color image should not be quantized');
+      await h.assertSamePixels(src, new Uint8Array(res.buffer));
+    }),
+
   'runs as a module Worker (the way the popup uses it)': (ctx) =>
     run(ctx, async () => {
       const src = await h.storedPng(100, 100);

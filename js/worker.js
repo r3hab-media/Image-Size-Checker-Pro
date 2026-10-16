@@ -1,4 +1,4 @@
-import { optimizePngLossless, isAnimatedPng, encodeRgbaPng } from './png.js';
+import { optimizePngLossless, optimizePngLossy, isAnimatedPng, encodeRgbaPng } from './png.js';
 import { readJpegInfo, transplantJpegMetadata } from './jpeg-meta.js';
 
 // Drop-in replacement rules: the output always keeps the original format and pixel dimensions.
@@ -6,6 +6,9 @@ import { readJpegInfo, transplantJpegMetadata } from './jpeg-meta.js';
 // and the result is only used when it is actually smaller.
 const DEFAULT_QUALITY = 92;
 const MIN_QUALITY = 82; // never drop below high visual quality on its own
+// Lossy PNG is kept only at or above this PSNR (dB) versus the original; below it, gradients and
+// photos show banding, so the lossless result is used instead.
+const MIN_LOSSY_PNG_PSNR = 36;
 const MIN_CHOSEN_QUALITY = 40; // lowest a user may pick explicitly in the preview
 const MAX_QUALITY = 96;
 const TARGET_STEPS = 6;
@@ -153,7 +156,8 @@ function result(out, kind, extra) {
 
 // chosenQuality: a quality the user picked in the preview. It may go below MIN_QUALITY and
 // disables the size target, since the user has already judged the result.
-export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, target = 0, chosenQuality }) {
+// lossyPng: also try a 256-color palette version of PNGs, kept when smaller and visually close.
+export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, target = 0, chosenQuality, lossyPng = false }) {
   const bytes = new Uint8Array(buffer);
   const kind = sniff(bytes);
   if (!kind) throw new Error('Unsupported image format.');
@@ -181,8 +185,19 @@ export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, t
   let width = 0;
   let height = 0;
 
+  let reason = '';
   if (kind === 'png') {
     out = await optimizePngLossless(bytes);
+    if (lossyPng) {
+      const lossy = await optimizePngLossy(bytes, { minPsnr: MIN_LOSSY_PNG_PSNR });
+      if (lossy && lossy.bytes && lossy.bytes.length < out.length) {
+        out = lossy.bytes;
+        note = 'compressed-lossy';
+        reason = `Reduced to ${lossy.colors} colors (PSNR ${lossy.psnr.toFixed(1)} dB)`;
+      } else if (lossy && lossy.rejected) {
+        reason = `Kept lossless: a 256-color version would visibly degrade it (PSNR ${lossy.psnr.toFixed(1)} dB)`;
+      }
+    }
   } else if (kind === 'webp') {
     const chunks = webpChunks(bytes);
     if (chunks.includes('ANIM')) return result(bytes, kind, { note: 'kept-animated', reason: 'Animated WebP kept as-is.' });
@@ -213,7 +228,7 @@ export async function compressImageBuffer({ buffer, quality = DEFAULT_QUALITY, t
   if (!out || out.length >= bytes.length) {
     return result(bytes, kind, { note: 'kept', reason: 'Already optimal; re-encoding would not make it smaller.', width, height });
   }
-  return result(out, kind, { note, target: goal, width, height });
+  return result(out, kind, { note, reason, target: goal, width, height });
 }
 
 const RESIZE_QUALITY = 85;

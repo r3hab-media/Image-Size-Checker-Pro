@@ -342,7 +342,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 const ESTIMATE_CACHE_KEY = 'iscEstimates';
 const MAX_ESTIMATES = 500;
 let pendingEstimates = 0;
-const estimateKey = (item) => `${item.fileSize}|${item.url}`;
+// Lossy PNG changes the result, so it is part of the key.
+const estimateKey = (item, lossyPng) => `${lossyPng ? 'L' : ''}|${item.fileSize}|${item.url}`;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return false;
@@ -353,14 +354,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const cached = {};
       const todo = [];
       for (const item of message.items) {
-        const hit = cache[estimateKey(item)];
+        const hit = cache[estimateKey(item, message.lossyPng)];
         if (hit) cached[item.url] = hit;
-        else todo.push({ ...item, cacheKey: estimateKey(item) });
+        else todo.push({ ...item, cacheKey: estimateKey(item, message.lossyPng) });
       }
       if (todo.length) {
         pendingEstimates += todo.length;
         try {
-          await sendToOffscreen({ type: 'RUN_ESTIMATES', tabId: message.tabId, items: todo, bytesPerPixel: message.bytesPerPixel });
+          await sendToOffscreen({ type: 'RUN_ESTIMATES', tabId: message.tabId, items: todo, bytesPerPixel: message.bytesPerPixel, lossyPng: message.lossyPng });
         } catch (err) {
           pendingEstimates -= todo.length;
           throw err;

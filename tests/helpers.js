@@ -20,6 +20,62 @@ export function noisyTranslucent(ctx, w, h) {
   ctx.putImageData(img, 0, 0);
 }
 
+// UI-style graphic: flat colors with antialiased edges and text (thousands of colors, few real ones).
+export function antialiasedGraphic(ctx, w, h) {
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, w, h);
+  const colors = ['#0ea5e9', '#f97316', '#10b981', '#6366f1', '#ef4444', '#0f172a'];
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.beginPath();
+    ctx.arc((i * 97) % w, (i * 61) % h, 8 + (i % 5) * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.fillText('Lossy PNG test 123', 20, h / 2);
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(10.5, 10.5, w - 21, h - 21);
+}
+
+export function opaqueNoise(ctx, w, h) {
+  const img = ctx.createImageData(w, h);
+  let seed = 3;
+  for (let i = 0; i < img.data.length; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    img.data[i] = i % 4 === 3 ? 255 : seed >> 16;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// Antialiased shapes on a transparent background, like a logo with soft edges.
+export function transparentLogo(ctx, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, '#7c3aed');
+  g.addColorStop(1, '#2563eb');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(w / 2, h / 2, w / 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#facc15';
+  ctx.font = 'bold 60px sans-serif';
+  ctx.fillText('ISC', w / 4, h / 2 + 20);
+}
+
+export async function decodeRgba(bytes) {
+  const img = await decodePng(bytes);
+  if (img.bitDepth !== 8 && img.colorType !== 3) throw new Error('decodeRgba expects 8-bit or palette PNGs');
+  const c = await canonical(bytes);
+  return Uint8Array.from(c.data, (v) => v >> 8);
+}
+
+export async function psnrBetween(a, b) {
+  const { psnr } = await import('/js/quantize.js');
+  return psnr(await decodeRgba(a), await decodeRgba(b));
+}
+
 export function photoLike(ctx, w, h) {
   const g = ctx.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, Math.max(w, h));
   g.addColorStop(0, '#0f766e');

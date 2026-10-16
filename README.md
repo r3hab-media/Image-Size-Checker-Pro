@@ -26,6 +26,8 @@ Pages are scanned when you open the side panel or press **Alt+Shift+I**. Turn on
 | WebP (lossy) | **High-quality lossy re-encode.** Lossless, animated, or color-profiled WebP files are left unchanged. |
 | GIF, BMP, ICO, AVIF, HEIC, animated PNG | **Left unchanged.** The browser cannot re-encode these without changing the file type. |
 
+**Allow lossy PNG** (off by default) also tries reducing PNGs to a 256-color palette with dithering, much like TinyPNG. Transparent, translucent and opaque pixels are quantized separately, so solid areas stay solid and soft edges stay soft. The result is used only when it is smaller and measures at least 36 dB PSNR against the original (visually near-identical); photo-like PNGs that would band keep the lossless result. On a 1000×1000 cartoon avatar this took a PNG from 519 KB to 164 KB, where lossless managed 510 KB.
+
 For JPEG and WebP, **🔍 Preview** opens a before/after comparison: drag the split slider, toggle **1:1** to inspect actual pixels, and move the **Quality** slider (40–96) to see the resulting size live. **Save at quality N** saves at exactly that quality; this is the only way to go below the automatic minimum of 82.
 
 A result is only used when it is smaller than the original; otherwise the original is reported as already optimal and nothing is saved.
