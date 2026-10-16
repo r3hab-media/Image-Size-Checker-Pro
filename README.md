@@ -12,9 +12,9 @@ For every `<img>`, CSS `background-image` and inline `<svg>` on the page:
 - Missing `alt` (an empty `alt=""` is treated as decorative and not flagged)
 - Missing `width`/`height` (layout-shift risk) and `loading="lazy"` above the fold (LCP risk)
 
-Results appear as badges on the page and in the popup, with CSV, JSON and Markdown export.
+Results appear as badges on the page and in the side panel (click the toolbar button), with CSV, JSON and Markdown export. The side panel stays open while you browse and follows the active tab.
 
-Pages are scanned when you open the popup or press **Alt+Shift+I**. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
+Pages are scanned when you open the side panel or press **Alt+Shift+I**. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
 
 ## How compression works
 
@@ -49,6 +49,6 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 ## Known limitations
 
-- Keep the popup open while a batch is compressing; closing it stops the batch.
+- Keep the side panel open while a batch is compressing; closing it stops the batch.
 - Images inside iframes are not scanned.
 - Inline SVGs are saved as their markup only; styles applied by the page's CSS are not included.

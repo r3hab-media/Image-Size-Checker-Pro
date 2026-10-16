@@ -279,11 +279,13 @@ function safeZipPath(path) {
 // Batch compress all oversized images and package into a single ZIP keeping original filenames
 async function compressAllTooLargeToZip() {
   if (!currentState || !currentState.items) return;
+  // Captured up front: the side panel can switch tabs while the batch runs.
+  const { items, pageUrl } = currentState;
   const destination = await resolveDestination();
 
   // The same image can appear several times on a page; compress and package it once.
   const seenUrls = new Set();
-  const candidates = currentState.items.filter((i) => {
+  const candidates = items.filter((i) => {
     if (!i.isTooLarge || seenUrls.has(i.url)) return false;
     seenUrls.add(i.url);
     return true;
@@ -345,7 +347,7 @@ async function compressAllTooLargeToZip() {
 
     let hostSlug = 'site';
     try {
-      hostSlug = new URL(currentState.pageUrl).hostname.replace(/[^a-z0-9-]+/gi, '-') || 'site';
+      hostSlug = new URL(pageUrl).hostname.replace(/[^a-z0-9-]+/gi, '-') || 'site';
     } catch (_) {}
     const saved = await saveToTargetDestination(zipBytes, `${hostSlug}-optimized-images.zip`, 'application/zip', destination);
     if (saved.cancelled) {
@@ -380,6 +382,21 @@ function sendToTab(tabId, message) {
   });
 }
 
+function resetDashboard() {
+  currentState = null;
+  els.pageHostLabel.textContent = 'Scanning active tab...';
+  els.kpiTotal.textContent = '0';
+  els.kpiBreakdown.textContent = '0 IMG · 0 BG · 0 SVG';
+  els.kpiWeight.textContent = '0 KB';
+  els.kpiSavings.textContent = '0 KB';
+  els.kpiTooLarge.textContent = '0';
+  els.kpiIssueSplit.textContent = '0 critical · 0 warn';
+  els.tooLargeCountBadge.textContent = '0';
+  els.compressAllZipBtn.disabled = true;
+  els.compressionStatus.textContent = '';
+  els.itemsList.innerHTML = `<div class="empty-state">Scanning images on this page...</div>`;
+}
+
 async function ensureAndScan(forceRescan = false, tabId = null) {
   if (!tabId) {
     const tab = await getActiveTab();
@@ -389,13 +406,16 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
     }
     tabId = tab.id;
   }
+  if (tabId !== activeTabId) resetDashboard();
   activeTabId = tabId;
 
   const ensureResp = await new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'ENSURE_CONTENT_SCRIPT', tabId: activeTabId }, (r) =>
+    chrome.runtime.sendMessage({ type: 'ENSURE_CONTENT_SCRIPT', tabId }, (r) =>
       resolve(r || { ok: false })
     );
   });
+  // The panel may have moved to another tab while this one was being checked.
+  if (tabId !== activeTabId) return;
 
   if (!ensureResp.ok) {
     els.pageHostLabel.textContent = 'Restricted browser page';
@@ -408,7 +428,8 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
     return;
   }
 
-  const state = await sendToTab(activeTabId, { type: forceRescan ? 'SCAN_PAGE' : 'GET_STATE' });
+  const state = await sendToTab(tabId, { type: forceRescan ? 'SCAN_PAGE' : 'GET_STATE' });
+  if (tabId !== activeTabId) return;
   if (!state || !state.ok) {
     els.itemsList.innerHTML = `<div class="empty-state">Unable to read page images. Click Scan to retry.</div>`;
     return;
@@ -851,6 +872,29 @@ chrome.storage.local.get(['iscProOverwrite'], (res) => {
 });
 refreshFolderLabel();
 ensureAndScan(false);
+
+// ---------- follow the active tab (the side panel stays open while browsing) ----------
+
+const ownPageUrl = location.href.split('#')[0];
+let panelWindowId = null;
+chrome.windows.getCurrent().then((w) => {
+  panelWindowId = w.id;
+});
+
+async function followTab(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.url === ownPageUrl) return; // when opened as a tab (tests), ignore ourselves
+  if (panelWindowId !== null && tab.windowId !== panelWindowId) return;
+  ensureAndScan(false, tabId);
+}
+
+chrome.tabs.onActivated.addListener(({ tabId }) => followTab(tabId));
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (tabId !== activeTabId) return;
+  if (info.status === 'loading' && info.url) resetDashboard();
+  // A navigation replaces the page (and its content script state), so scan the new page.
+  if (info.status === 'complete') ensureAndScan(false, tabId);
+});
 
 // Exposed for the automated tests.
 window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTooLargeToZip, saveToTargetDestination };

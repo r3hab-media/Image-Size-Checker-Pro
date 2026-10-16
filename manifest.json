@@ -6,7 +6,8 @@
   "permissions": [
     "scripting",
     "storage",
-    "downloads"
+    "downloads",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -15,7 +16,6 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Image Size Checker Pro",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -49,5 +49,9 @@
       },
       "description": "Toggle on-page image inspector overlay"
     }
-  }
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "minimum_chrome_version": "116"
 }
