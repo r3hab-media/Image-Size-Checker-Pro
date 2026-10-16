@@ -238,10 +238,15 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // ---------- background compression jobs (run in an offscreen document) ----------
 
 let creatingOffscreen = null;
+let closingOffscreen = null;
 let activeJobs = 0;
 let jobCounter = 0;
 
 async function ensureOffscreen() {
+  // hasDocument() is already true while a document is still loading, and still true while one is
+  // closing; wait out both so work is never sent to a document that cannot receive it.
+  if (creatingOffscreen) return creatingOffscreen;
+  if (closingOffscreen) await closingOffscreen;
   if (await chrome.offscreen.hasDocument()) return;
   creatingOffscreen ??= chrome.offscreen
     .createDocument({
@@ -253,6 +258,33 @@ async function ensureOffscreen() {
       creatingOffscreen = null;
     });
   await creatingOffscreen;
+}
+
+// Delivers work to the offscreen document, which acknowledges it; retries (after a pause) with a fresh
+// document if the message was lost (e.g. the document closed in between).
+async function sendToOffscreen(message) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 250 * attempt));
+    await ensureOffscreen();
+    const acked = await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ target: 'offscreen', ...message }, (resp) => {
+        void chrome.runtime.lastError;
+        resolve(Boolean(resp && resp.ok));
+      })
+    );
+    if (acked) return;
+  }
+  throw new Error('Background compression is unavailable');
+}
+
+function closeOffscreenIfIdle() {
+  if (activeJobs > 0 || pendingEstimates > 0 || creatingOffscreen || closingOffscreen) return;
+  closingOffscreen = chrome.offscreen
+    .closeDocument()
+    .catch(() => {})
+    .finally(() => {
+      closingOffscreen = null;
+    });
 }
 
 // The latest job and per-image results for each tab, so a reopened panel can show them.
@@ -272,11 +304,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const job = { ...message.job, id: `${Date.now()}-${++jobCounter}` };
     activeJobs++;
     storeJobUpdate({ id: job.id, mode: job.mode, tabId: job.tabId, state: 'queued', status: 'Queued…' })
-      .then(ensureOffscreen)
-      .then(() => {
-        chrome.runtime.sendMessage({ target: 'offscreen', type: 'RUN_JOB', job }, () => void chrome.runtime.lastError);
-        sendResponse({ ok: true, jobId: job.id });
-      })
+      .then(() => sendToOffscreen({ type: 'RUN_JOB', job }))
+      .then(() => sendResponse({ ok: true, jobId: job.id }))
       .catch((err) => {
         activeJobs--;
         sendResponse({ ok: false, error: String(err.message || err) });
@@ -292,7 +321,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'JOBS_IDLE') {
     // Free the offscreen document's memory once nothing is queued.
-    if (activeJobs === 0) chrome.offscreen.closeDocument().catch(() => {});
+    closeOffscreenIfIdle();
     return false;
   }
 
@@ -303,6 +332,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(resp || { ok: false, error: 'Page is no longer available' });
     });
     return true;
+  }
+
+  return false;
+});
+
+// ---------- savings estimates (dry-run compression, cached by URL + size) ----------
+
+const ESTIMATE_CACHE_KEY = 'iscEstimates';
+const MAX_ESTIMATES = 500;
+let pendingEstimates = 0;
+const estimateKey = (item) => `${item.fileSize}|${item.url}`;
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || !message.type) return false;
+
+  if (message.type === 'START_ESTIMATE') {
+    (async () => {
+      const cache = (await chrome.storage.session.get(ESTIMATE_CACHE_KEY))[ESTIMATE_CACHE_KEY] || {};
+      const cached = {};
+      const todo = [];
+      for (const item of message.items) {
+        const hit = cache[estimateKey(item)];
+        if (hit) cached[item.url] = hit;
+        else todo.push({ ...item, cacheKey: estimateKey(item) });
+      }
+      if (todo.length) {
+        pendingEstimates += todo.length;
+        try {
+          await sendToOffscreen({ type: 'RUN_ESTIMATES', tabId: message.tabId, items: todo, bytesPerPixel: message.bytesPerPixel });
+        } catch (err) {
+          pendingEstimates -= todo.length;
+          throw err;
+        }
+      }
+      sendResponse({ ok: true, cached, pending: todo.length });
+    })().catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
+  if (message.type === 'ESTIMATE_UPDATE') {
+    pendingEstimates = Math.max(0, pendingEstimates - 1);
+    if (!message.result.error) {
+      chrome.storage.session.get(ESTIMATE_CACHE_KEY).then((stored) => {
+        const cache = stored[ESTIMATE_CACHE_KEY] || {};
+        const keys = Object.keys(cache);
+        if (keys.length >= MAX_ESTIMATES) delete cache[keys[0]];
+        cache[message.cacheKey] = message.result;
+        return chrome.storage.session.set({ [ESTIMATE_CACHE_KEY]: cache });
+      });
+    }
+    return false;
   }
 
   return false;
