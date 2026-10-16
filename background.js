@@ -234,3 +234,76 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 // The toolbar button opens the side panel, which stays open while browsing (unlike a popup).
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+// ---------- background compression jobs (run in an offscreen document) ----------
+
+let creatingOffscreen = null;
+let activeJobs = 0;
+let jobCounter = 0;
+
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return;
+  creatingOffscreen ??= chrome.offscreen
+    .createDocument({
+      url: 'offscreen.html',
+      reasons: ['WORKERS', 'BLOBS'],
+      justification: 'Compress images in the background so batches keep running after the side panel closes.'
+    })
+    .finally(() => {
+      creatingOffscreen = null;
+    });
+  await creatingOffscreen;
+}
+
+// The latest job and per-image results for each tab, so a reopened panel can show them.
+async function storeJobUpdate(job) {
+  const jobKey = `iscJob:${job.tabId}`;
+  const resultsKey = `iscResults:${job.tabId}`;
+  const stored = await chrome.storage.session.get([resultsKey]);
+  const results = { ...(stored[resultsKey] || {}), ...(job.results || {}) };
+  const { results: _omit, ...summary } = job;
+  await chrome.storage.session.set({ [jobKey]: summary, [resultsKey]: results });
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || !message.type) return false;
+
+  if (message.type === 'START_JOB') {
+    const job = { ...message.job, id: `${Date.now()}-${++jobCounter}` };
+    activeJobs++;
+    storeJobUpdate({ id: job.id, mode: job.mode, tabId: job.tabId, state: 'queued', status: 'Queued…' })
+      .then(ensureOffscreen)
+      .then(() => {
+        chrome.runtime.sendMessage({ target: 'offscreen', type: 'RUN_JOB', job }, () => void chrome.runtime.lastError);
+        sendResponse({ ok: true, jobId: job.id });
+      })
+      .catch((err) => {
+        activeJobs--;
+        sendResponse({ ok: false, error: String(err.message || err) });
+      });
+    return true;
+  }
+
+  if (message.type === 'JOB_UPDATE') {
+    if (message.job.state === 'done' || message.job.state === 'error') activeJobs = Math.max(0, activeJobs - 1);
+    storeJobUpdate(message.job);
+    return false;
+  }
+
+  if (message.type === 'JOBS_IDLE') {
+    // Free the offscreen document's memory once nothing is queued.
+    if (activeJobs === 0) chrome.offscreen.closeDocument().catch(() => {});
+    return false;
+  }
+
+  // Offscreen documents cannot reach tabs, so page-owned blob: images are read through here.
+  if (message.type === 'FETCH_TAB_BYTES') {
+    chrome.tabs.sendMessage(message.tabId, { type: 'FETCH_BYTES_LOCAL', url: message.url }, (resp) => {
+      void chrome.runtime.lastError;
+      sendResponse(resp || { ok: false, error: 'Page is no longer available' });
+    });
+    return true;
+  }
+
+  return false;
+});

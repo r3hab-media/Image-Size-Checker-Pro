@@ -472,6 +472,53 @@ export const tests = {
     await closeAll(page, popup);
   },
 
+  'batch keeps running after the panel closes, and a reopened panel shows the result': async (ctx) => {
+    const { page, tabId, popup } = await scanned(ctx);
+    await popup.evaluate(async (id) => {
+      const { setFolder } = await import('/js/folder-store.js');
+      const root = await navigator.storage.getDirectory();
+      for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+      await setFolder(root);
+      await window.__iscPopup.ensureAndScan(true, id);
+      window.__iscPopup.compressAllTooLargeToZip(); // not awaited: the panel closes right away
+      await new Promise((r) => setTimeout(r, 50));
+    }, tabId);
+    await popup.close();
+
+    const checker = await extPage(ctx, 'tests/blank.html');
+    const result = await checker.evaluate(async (id) => {
+      for (let i = 0; i < 100; i++) {
+        const job = (await chrome.storage.session.get(`iscJob:${id}`))[`iscJob:${id}`];
+        if (job && (job.state === 'done' || job.state === 'error')) {
+          const root = await navigator.storage.getDirectory();
+          const names = [];
+          for await (const name of root.keys()) names.push(name);
+          return { job, names };
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return { timeout: true };
+    }, tabId);
+    await checker.close();
+    assert(!result.timeout, 'job never finished');
+    assert(result.job.state === 'done', `job ${JSON.stringify(result.job)}`);
+    assert(result.names.some((n) => n.endsWith('.zip')), `no zip written: ${result.names}`);
+
+    // A reopened panel for the same tab shows the finished job and per-image results.
+    const reopened = await extPage(ctx, 'popup.html');
+    const shown = await reopened.evaluate(async (id) => {
+      await window.__iscPopup.ensureAndScan(false, id);
+      await new Promise((r) => setTimeout(r, 300));
+      return {
+        status: document.getElementById('compressionStatus').textContent,
+        pills: document.querySelectorAll('.compress-result-pill').length
+      };
+    }, tabId);
+    assert(/Saved ZIP/.test(shown.status), `reopened status: ${shown.status}`);
+    assert(shown.pills > 0, 'per-image results not restored');
+    await closeAll(page, reopened);
+  },
+
   'Playground page is reachable from the popup': async (ctx) => {
     const demo = await extPage(ctx, 'demo-playground.html');
     await sleep(800);
