@@ -232,6 +232,61 @@ export const tests = {
       if (!new TextDecoder().decode(res2.buffer).includes('<![CDATA[ a  >  b { } <!-- not a comment --> ]]>')) throw new Error('CDATA modified');
     }),
 
+  'resize: JPEG keeps format and aspect ratio, and gets much smaller': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.canvasBytes(800, 600, h.photoLike, 'image/jpeg', 0.9);
+      const res = await engine.resizeImageBuffer({ buffer: src.buffer.slice(0), width: 200 });
+      const out = new Uint8Array(res.buffer);
+      if (engine.sniff(out) !== 'jpeg') throw new Error('not jpeg');
+      const dims = await h.browserSize(out, 'image/jpeg');
+      if (dims.width !== 200 || dims.height !== 150) throw new Error('dims ' + JSON.stringify(dims));
+      if (!(out.length < src.length / 4)) throw new Error(`size ${src.length} -> ${out.length}`);
+    }),
+
+  'resize never upscales': (ctx) =>
+    run(ctx, async () => {
+      const src = await h.canvasBytes(300, 200, h.photoLike, 'image/jpeg', 0.9);
+      const res = await engine.resizeImageBuffer({ buffer: src.buffer.slice(0), width: 2000 });
+      if (res.width !== 300 || res.height !== 200) throw new Error(`${res.width}x${res.height}`);
+    }),
+
+  'resize: translucent PNG stays PNG with alpha and keeps color chunks': (ctx) =>
+    run(ctx, async () => {
+      const base = await h.canvasPng(400, 300, h.noisyTranslucent);
+      const src = h.insertPngChunks(base, [['gAMA', new Uint8Array([0, 0, 0xb1, 0x8f])]]);
+      const res = await engine.resizeImageBuffer({ buffer: src.buffer.slice(0), width: 100 });
+      const out = new Uint8Array(res.buffer);
+      const dec = await png.decodePng(out);
+      if (dec.width !== 100 || dec.height !== 75) throw new Error(`${dec.width}x${dec.height}`);
+      if (![4, 6, 3].includes(dec.colorType)) throw new Error('alpha dropped, color type ' + dec.colorType);
+      if (!png.readChunks(out).some((c) => c.type === 'gAMA')) throw new Error('gAMA lost');
+    }),
+
+  'resize: JPEG keeps ICC/EXIF and comes out upright': (ctx) =>
+    run(ctx, async () => {
+      const plain = await h.canvasBytes(400, 200, h.photoLike, 'image/jpeg', 0.95);
+      const src = h.jpegWithMetadata(plain, { orientation: 6 }); // displays as 200x400
+      const res = await engine.resizeImageBuffer({ buffer: src.buffer.slice(0), width: 100 });
+      const out = new Uint8Array(res.buffer);
+      const text = new TextDecoder('latin1').decode(out.subarray(0, 2000));
+      if (!text.includes('ICC_PROFILE') || !text.includes('Exif')) throw new Error('metadata lost');
+      if (h.readOrientation(out) !== 1) throw new Error('orientation not reset');
+      const dims = await h.browserSize(out, 'image/jpeg');
+      if (dims.width !== 100 || dims.height !== 200) throw new Error('dims ' + JSON.stringify(dims));
+    }),
+
+  'resize refuses formats it cannot write back (GIF)': (ctx) =>
+    run(ctx, async () => {
+      const gif = Uint8Array.from(atob('R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='), (c) => c.charCodeAt(0));
+      let threw = false;
+      try {
+        await engine.resizeImageBuffer({ buffer: gif.buffer, width: 1 });
+      } catch (_) {
+        threw = true;
+      }
+      if (!threw) throw new Error('GIF resize should fail');
+    }),
+
   'runs as a module Worker (the way the popup uses it)': (ctx) =>
     run(ctx, async () => {
       const src = await h.storedPng(100, 100);

@@ -426,3 +426,13 @@ export async function optimizePngLossless(bytes) {
 function pickSmallest(list) {
   return list.reduce((a, b) => (b.length < a.length ? b : a));
 }
+
+// Encodes fresh RGBA pixels (e.g. a resized image) in their smallest exact PNG form, keeping the
+// source's color chunks. eXIf is dropped: the pixels were already rotated when they were decoded.
+export async function encodeRgbaPng({ width, height, rgba, sourcePng }) {
+  const ancillary = sourcePng ? readChunks(sourcePng).filter((c) => KEEP_CHUNKS.has(c.type) && c.type !== 'eXIf') : [];
+  const candidates = [await encodePng({ width, height, ...packTruecolor(rgba, width, height), ancillary })];
+  const pal = exactPalette(rgba);
+  if (pal) candidates.push(await encodePng({ width, height, ...packIndexed(rgba, width, height, pal), ancillary }));
+  return pickSmallest(candidates);
+}

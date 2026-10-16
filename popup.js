@@ -1,4 +1,4 @@
-import { KEPT_NOTES } from './js/jobs.js';
+import { KEPT_NOTES, RESIZABLE_FORMATS, variantWidths } from './js/jobs.js';
 import { getFolder, getWritableFolder, clearFolder } from './js/folder-store.js';
 
 let currentState = null;
@@ -28,6 +28,8 @@ const els = {
   overwriteRow: document.getElementById('overwriteRow'),
   overwriteCheck: document.getElementById('overwriteCheck'),
   compressAllZipBtn: document.getElementById('compressAllZipBtn'),
+  resizeAllBtn: document.getElementById('resizeAllBtn'),
+  resizeCountBadge: document.getElementById('resizeCountBadge'),
   tooLargeCountBadge: document.getElementById('tooLargeCountBadge'),
   compressionStatus: document.getElementById('compressionStatus'),
   filterTabs: document.getElementById('filterTabs'),
@@ -107,8 +109,25 @@ async function startJob(mode, items) {
 }
 
 function setJobRunning(running) {
-  els.compressAllZipBtn.disabled = running || zipCandidates().length === 0;
   els.compressAllZipBtn.dataset.running = running ? '1' : '';
+  els.compressAllZipBtn.disabled = running || zipCandidates().length === 0;
+  els.resizeAllBtn.disabled = running || resizeCandidates().length === 0;
+}
+
+const jobRunning = () => els.compressAllZipBtn.dataset.running === '1';
+
+// Oversized PNG/JPEG/WebP images that have at least one smaller variant to generate.
+function resizeCandidates() {
+  if (!currentState) return [];
+  return uniqueByUrl(currentState.items.filter(isResizable));
+}
+
+const isResizable = (item) => item.needsResize && RESIZABLE_FORMATS.has(item.format) && variantWidths(item).length > 0;
+
+async function resizeAllOversized() {
+  const items = resizeCandidates();
+  if (!items.length) return;
+  return startJob('resize', items);
 }
 
 function applyJob(job, results) {
@@ -297,6 +316,16 @@ function filterAndSortItems(items) {
   return filtered;
 }
 
+function resizeResultHtml(item, info) {
+  if (!info || !info.variants) return '';
+  const files = info.variants.map((v) => `${escapeHtml(v.name)} (${v.width}×${v.height}, ${formatBytes(v.bytes)})`).join(' · ');
+  return `<div class="resize-result">
+      📐 Created ${files}
+      <pre class="snippet">${escapeHtml(info.snippet)}</pre>
+      <button class="mini-btn" data-act="copy-snippet" data-url="${escapeHtml(item.url)}">Copy snippet</button>
+    </div>`;
+}
+
 function compressResultHtml(info) {
   if (!info) return '';
   if (KEPT_NOTES.has(info.note)) {
@@ -363,7 +392,7 @@ function estimateHtml(item) {
     return `<div class="estimate-pill">💡 Compression can save ${formatBytes(e.beforeBytes - e.afterBytes)} (-${e.savedPct}%)</div>`;
   }
   if (item.needsResize && !item.needsCompression) {
-    return `<div class="estimate-pill">ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed).</div>`;
+    return `<div class="estimate-pill">ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed)${isResizable(item) ? ' — use 📐 Resize.' : '.'}</div>`;
   }
   return '';
 }
@@ -403,7 +432,10 @@ function renderDashboard() {
   els.kpiTooLarge.textContent = String(tooLargeItems.length);
   els.kpiIssueSplit.textContent = `${summary.compressibleCount ?? 0} compressible · ${summary.oversizedCount ?? 0} oversized px`;
   els.tooLargeCountBadge.textContent = String(zipItems.length);
-  els.compressAllZipBtn.disabled = zipItems.length === 0 || els.compressAllZipBtn.dataset.running === '1';
+  els.compressAllZipBtn.disabled = zipItems.length === 0 || jobRunning();
+  const resizeItems = resizeCandidates();
+  els.resizeCountBadge.textContent = String(resizeItems.length);
+  els.resizeAllBtn.disabled = resizeItems.length === 0 || jobRunning();
 
   const visibleItems = filterAndSortItems(items);
   if (visibleItems.length === 0) {
@@ -421,7 +453,9 @@ function renderDashboard() {
       const statusLabel =
         item.severity === 'error' ? 'Error' : item.severity === 'warn' ? 'Warn' : 'OK';
 
-      const compPillHtml = compressResultHtml(compressedResults.get(item.url)) || estimateHtml(item);
+      const compPillHtml =
+        (compressResultHtml(compressedResults.get(item.url)) || estimateHtml(item)) +
+        resizeResultHtml(item, compressedResults.get(`resize|${item.url}`));
 
       const issuesHtml =
         item.issues.length > 0
@@ -471,6 +505,11 @@ function renderDashboard() {
             )}" title="Compress &amp; save ${escapeHtml(
         item.originalFilename
       )} keeping original dimensions &amp; format">🗜️ Compress</button>
+            ${
+              isResizable(item)
+                ? `<button class="mini-btn resize-btn" data-act="resize" data-id="${escapeHtml(item.id)}" title="Create ${variantWidths(item).map((w) => w + 'px').join(' and ')} wide versions plus a srcset snippet">📐 Resize</button>`
+                : ''
+            }
             <button class="mini-btn" data-act="locate" data-id="${escapeHtml(
               item.id
             )}" title="Scroll to image on page">Locate</button>
@@ -506,6 +545,21 @@ async function onItemAction(btn) {
     btn.textContent = 'Working…';
     const job = await startJob('single', [targetItem]);
     if (!job || job.state === 'error') flash(btn, 'Error', '🗜️ Compress', 1500);
+  } else if (act === 'resize' && currentState) {
+    const targetItem = currentState.items.find((x) => x.id === id);
+    if (!targetItem) return;
+    btn.disabled = true;
+    btn.textContent = 'Working…';
+    const job = await startJob('resize', [targetItem]);
+    if (!job || job.state === 'error') flash(btn, 'Error', '📐 Resize', 1500);
+  } else if (act === 'copy-snippet') {
+    const snippet = compressedResults.get(`resize|${btn.getAttribute('data-url')}`)?.snippet || '';
+    try {
+      await navigator.clipboard.writeText(snippet);
+      flash(btn, 'Copied', 'Copy snippet', 1000);
+    } catch (_) {
+      flash(btn, 'Failed', 'Copy snippet', 1000);
+    }
   } else if (act === 'locate' && activeTabId) {
     const resp = await sendToTab(activeTabId, { type: 'SCROLL_TO_IMAGE', id });
     if (!resp || !resp.ok) {
@@ -551,6 +605,10 @@ els.resetFolderBtn.addEventListener('click', async () => {
 els.overwriteCheck.addEventListener('change', () => {
   overwriteExisting = els.overwriteCheck.checked;
   chrome.storage.local.set({ iscProOverwrite: overwriteExisting });
+});
+
+els.resizeAllBtn.addEventListener('click', () => {
+  resizeAllOversized();
 });
 
 els.compressAllZipBtn.addEventListener('click', () => {
@@ -748,4 +806,4 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
 });
 
 // Exposed for the automated tests.
-window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTooLargeToZip };
+window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTooLargeToZip, resizeAllOversized };
