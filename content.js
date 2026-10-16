@@ -1,10 +1,9 @@
 // Image Size Checker Pro — Content Script & Non-Destructive Shadow DOM Overlay Engine
 (() => {
-  // After the extension reloads, the old copy of this script stays in the page with a dead runtime.
-  // Replace it instead of bailing out, or the new copy would never register its message listener.
-  const previous = window.__ISC_PRO__;
-  if (previous && previous.alive()) return;
-  if (previous) previous.destroy();
+  if (window.__ISC_PRO_LOADED__) {
+    return;
+  }
+  window.__ISC_PRO_LOADED__ = true;
 
   const DEFAULT_SETTINGS = {
     enabled: true,
@@ -1417,21 +1416,6 @@
     chrome.runtime.onMessage.addListener(onMessage);
     chrome.storage?.onChanged?.addListener(onStorageChanged);
   }
-
-  window.__ISC_PRO__ = {
-    alive: runtimeAlive,
-    destroy() {
-      observer.disconnect();
-      clearTimeout(scanTimer);
-      clearTimeout(hoverClearTimer);
-      document.removeEventListener('mouseover', onMouseOver);
-      document.removeEventListener('mouseout', onMouseOut);
-      window.removeEventListener('scroll', scheduleOverlayPositionUpdate, { capture: true });
-      window.removeEventListener('resize', scheduleOverlayPositionUpdate);
-      if (hostEl) hostEl.remove();
-      active = false;
-    }
-  };
 
   if (runtimeAlive() && chrome.storage && chrome.storage.local) {
     chrome.storage.local.get(['iscProSettings'], (res) => {

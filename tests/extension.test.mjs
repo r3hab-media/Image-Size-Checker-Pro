@@ -206,6 +206,20 @@ function zipEntryNames(bytes) {
   return names;
 }
 
+function zipEntrySizes(bytes) {
+  const buf = Buffer.from(bytes);
+  const sizes = {};
+  let pos = 0;
+  while (buf.readUInt32LE(pos) === 0x04034b50) {
+    const size = buf.readUInt32LE(pos + 22);
+    const nameLen = buf.readUInt16LE(pos + 26);
+    const extraLen = buf.readUInt16LE(pos + 28);
+    sizes[buf.subarray(pos + 30, pos + 30 + nameLen).toString('utf8')] = size;
+    pos += 30 + nameLen + extraLen + size;
+  }
+  return sizes;
+}
+
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
@@ -462,6 +476,24 @@ export const tests = {
     const popup = await extPage(ctx, 'popup.html');
     const st = await sendToTab(popup, tabId, { type: 'SCAN_PAGE' });
     assert(st && st.ok && st.items.length >= 6, `playground scan: ${st && st.items && st.items.length}`);
+
+    // The playground's descriptions promise these results; check them.
+    const out = await popup.evaluate(async (id) => {
+      const { setFolder } = await import('/js/folder-store.js');
+      const root = await navigator.storage.getDirectory();
+      for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+      await setFolder(root);
+      await window.__iscPopup.ensureAndScan(true, id);
+      await window.__iscPopup.compressAllTooLargeToZip();
+      const files = [];
+      for await (const [, h] of root.entries()) files.push(Array.from(new Uint8Array(await (await h.getFile()).arrayBuffer())));
+      return { status: document.getElementById('compressionStatus').textContent, zip: files[0] };
+    }, tabId);
+    assert(out.zip, `no zip: ${out.status}`);
+    const sizes = zipEntrySizes(out.zip);
+    assert(sizes['hero-dashboard.png'] < 20 * 1024, `hero-dashboard.png ${sizes['hero-dashboard.png']}`);
+    const jpgBefore = st.items.find((i) => i.originalFilename === 'product-feature.jpg').fileSize;
+    assert(sizes['product-feature.jpg'] < jpgBefore * 0.7, `product-feature.jpg ${jpgBefore} -> ${sizes['product-feature.jpg']}`);
     await closeAll(demo, popup);
   }
 };

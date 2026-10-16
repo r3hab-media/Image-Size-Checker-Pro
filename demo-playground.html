@@ -85,13 +85,13 @@
 
       <div class="card">
         <h2>3. Unoptimized Heavy JPEG (<code>product-feature.jpg</code>)</h2>
-        <p>Intrinsic 1280×720 photo encoded at quality 1.0 (~310 KB) in a 280×158 slot. Compresses cleanly to ~75 KB keeping 1280×720 dimensions.</p>
+        <p>Intrinsic 1280×720 photo encoded at quality 1.0 in a 280×158 slot. Re-encodes at high quality to a much smaller JPEG, keeping 1280×720 dimensions.</p>
         <img id="imgCover" data-filename="product-feature.jpg" style="width: 280px; height: 158px; object-fit: cover;" width="280" height="158" alt="Unoptimized high-res JPEG preview" />
       </div>
 
       <div class="card">
         <h2>4. Unoptimized Heavy PNG (<code>hero-dashboard.png</code>)</h2>
-        <p>Intrinsic 1200×800 UI graphic (~360 KB uncompressed PNG chunks) in a 260×173 slot. Compresses losslessly via indexed/filtered deflate.</p>
+        <p>Intrinsic 360×240 UI graphic stored as an uncompressed RGBA PNG (~340 KB) in a 260×173 slot. Compresses losslessly (bit-exact pixels) to a few KB via palette reduction and filtered deflate.</p>
         <img id="imgOversized" data-filename="hero-dashboard.png" style="width: 260px; height: 173px;" width="260" height="173" alt="Oversized high-resolution UI graphic" />
       </div>
 
