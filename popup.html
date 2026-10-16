@@ -59,10 +59,13 @@
         </div>
       </div>
       <div class="folder-btns">
-        <button id="chooseFolderBtn" class="icon-btn" title="Choose a persistent target folder on disk via Native OS Directory Picker">Choose Folder…</button>
+        <button id="chooseFolderBtn" class="icon-btn" title="Choose a target folder on disk (remembered until you reset it)">Choose Folder…</button>
         <button id="resetFolderBtn" class="icon-btn hidden" title="Switch back to Native Save-As prompt per download">Use Save-As</button>
       </div>
     </div>
+    <label class="overwrite-row hidden" id="overwriteRow">
+      <input type="checkbox" id="overwriteCheck" /> Overwrite files with the same name in this folder
+    </label>
     <div class="batch-compress-row">
       <button id="compressAllZipBtn" class="compress-all-btn">
         🗜️ Compress &amp; Download All Too Large (<span id="tooLargeCountBadge">0</span>) to ZIP
@@ -119,6 +122,7 @@
     <div class="settings-checks">
       <label><input type="checkbox" id="scanBgCheck" checked /> Scan CSS <code>background-image</code></label>
       <label><input type="checkbox" id="scanSvgCheck" checked /> Scan inline <code>&lt;svg&gt;</code></label>
+      <label title="Off: pages are only scanned when you open this popup or press the shortcut, so the extension does not re-download every image on every site you visit."><input type="checkbox" id="autoScanCheck" /> Auto-scan every page I visit</label>
       <button id="saveSettingsBtn" class="apply-btn">Apply &amp; Re-Scan</button>
     </div>
   </section>

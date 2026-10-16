@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Choose Target Folder — Image Size Checker Pro</title>
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body { width: auto; padding: 24px; }
+    .folder-page { display: flex; flex-direction: column; gap: 14px; max-width: 420px; }
+    .folder-page p { margin: 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="folder-page">
+    <h1 class="brand-title">Choose a target folder</h1>
+    <p>Compressed images will be saved straight into this folder (for example your site's <code>public/images</code>).</p>
+    <button id="pickBtn" class="compress-all-btn">Choose Folder…</button>
+    <p id="status" class="compression-status"></p>
+  </div>
+  <script type="module" src="folder.js"></script>
+</body>
+</html>

@@ -1,12 +1,14 @@
 // Image Size Checker Pro — Content Script & Non-Destructive Shadow DOM Overlay Engine
 (() => {
-  if (window.__ISC_PRO_LOADED__) {
-    return;
-  }
-  window.__ISC_PRO_LOADED__ = true;
+  // After the extension reloads, the old copy of this script stays in the page with a dead runtime.
+  // Replace it instead of bailing out, or the new copy would never register its message listener.
+  const previous = window.__ISC_PRO__;
+  if (previous && previous.alive()) return;
+  if (previous) previous.destroy();
 
   const DEFAULT_SETTINGS = {
     enabled: true,
+    autoScan: false, // scan every page on load; otherwise only after the popup or shortcut asks
     overlayMode: 'all', // 'all' | 'issues' | 'hover' | 'off'
     maxFileSizeKB: 250,
     aspectRatioTolerancePct: 3.0,
@@ -16,22 +18,50 @@
     scanInlineSvgs: true,
     minDimensionPx: 24
   };
+  const SCAN_KEYS = ['maxFileSizeKB', 'aspectRatioTolerancePct', 'oversizeDprMultiplier', 'bytesPerPixelTarget', 'scanCssBackgrounds', 'scanInlineSvgs', 'minDimensionPx'];
+  const ANALYZE_CONCURRENCY = 6;
+  const HOVER_GRACE_MS = 250;
 
   let settings = { ...DEFAULT_SETTINGS };
+  let active = false; // set once something asks for a scan; until then the page is left alone
   let analyzedItems = [];
   let elementMap = new Map();
-  let itemByElement = new WeakMap();
+  const itemByElement = new WeakMap();
+  const elementIds = new WeakMap();
+  let elementIdCounter = 0;
+  const metaCache = new Map();
   let hoveredItemId = null;
   let pinnedItemId = null;
   let highlightedItemId = null;
-  let scanCounter = 0;
+  let hoverClearTimer = null;
   let scanTimer = null;
   let rafPending = false;
+  let runningScan = null;
+  let queuedScan = null;
 
   let hostEl = null;
   let shadowRoot = null;
   let badgesLayer = null;
   let tooltipEl = null;
+  let tooltipItemId = null;
+  const overlayNodes = new Map(); // item id -> { box, pill, key }
+
+  function runtimeAlive() {
+    try {
+      return Boolean(chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
   function formatBytes(bytes) {
     if (bytes === null || bytes === undefined || isNaN(bytes) || bytes <= 0) return '0 KB';
@@ -67,6 +97,12 @@
     return `${ratio.toFixed(2)}:1`;
   }
 
+  const KNOWN_EXT = /\.(avif|webp|png|jpe?g|gif|svg|bmp|ico)$/i;
+
+  function urlPath(url) {
+    return (url || '').split('?')[0].split('#')[0];
+  }
+
   function detectFormat(url, mimeType, kind) {
     if (kind === 'svg') return 'SVG';
     const m = (mimeType || '').toLowerCase();
@@ -77,14 +113,15 @@
     if (m.includes('jpeg') || m.includes('jpg')) return 'JPEG';
     if (m.includes('gif')) return 'GIF';
     if (m.includes('bmp')) return 'BMP';
+    if (m.includes('icon')) return 'ICO';
 
     const u = (url || '').toLowerCase();
     if (u.startsWith('data:image/')) {
-      const sub = u.slice(11).split(/[;,]/)[0].toUpperCase();
-      return sub === 'SVG+XML' ? 'SVG' : sub;
+      const sub = u.slice(11).split(/[;,]/)[0];
+      const known = { 'svg+xml': 'SVG', jpeg: 'JPEG', jpg: 'JPEG', png: 'PNG', gif: 'GIF', webp: 'WEBP', avif: 'AVIF', bmp: 'BMP' };
+      return known[sub] || 'IMG';
     }
-    const clean = u.split('?')[0].split('#')[0];
-    const extMatch = clean.match(/\.(avif|webp|png|jpe?g|gif|svg|bmp|ico)$/i);
+    const extMatch = urlPath(u).match(KNOWN_EXT);
     if (extMatch) {
       const ext = extMatch[1].toUpperCase();
       return ext === 'JPG' ? 'JPEG' : ext;
@@ -94,47 +131,61 @@
 
   function defaultExtForFormat(format) {
     const f = (format || '').toUpperCase();
-    if (f === 'PNG') return 'png';
-    if (f === 'WEBP') return 'webp';
-    if (f === 'SVG') return 'svg';
-    if (f === 'GIF') return 'gif';
-    if (f === 'AVIF') return 'avif';
-    return 'jpg';
+    const map = { PNG: 'png', WEBP: 'webp', SVG: 'svg', GIF: 'gif', AVIF: 'avif', BMP: 'bmp', ICO: 'ico' };
+    return map[f] || 'jpg';
+  }
+
+  // Makes one path segment safe on every OS: no separators, reserved characters, or dot-only names.
+  function sanitizeSegment(name) {
+    const clean = String(name)
+      .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, '_')
+      .replace(/^[.\s]+|[.\s]+$/g, '')
+      .slice(0, 120);
+    return clean || '';
   }
 
   // Extract exact original filename (preserving original extension, never adding -compressed)
   function extractOriginalFilename(url, kind, format, index, el) {
     const ext = defaultExtForFormat(format);
+    const withExt = (base) => (/\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}.${ext}`);
+
     const dataFilename = el && el.getAttribute && el.getAttribute('data-filename');
     if (dataFilename) {
-      return { filename: dataFilename, relativePath: dataFilename };
+      const base = sanitizeSegment(dataFilename.split(/[\\/]/).pop());
+      if (base) return { filename: withExt(base), relativePath: withExt(base) };
     }
 
-    if (url && !url.startsWith('data:') && !url.startsWith('inline-')) {
+    if (url && !url.startsWith('data:') && !url.startsWith('blob:')) {
       try {
         const u = new URL(url, window.location.href);
-        const segs = u.pathname.split('/').filter(Boolean);
+        const segs = u.pathname
+          .split('/')
+          .filter(Boolean)
+          .map((s) => {
+            try {
+              return sanitizeSegment(decodeURIComponent(s));
+            } catch (_) {
+              return sanitizeSegment(s);
+            }
+          })
+          .filter(Boolean);
         if (segs.length > 0) {
-          let base = decodeURIComponent(segs[segs.length - 1]);
-          base = base.replace(/[<>:"/\\|?*]+/g, '_');
-          if (!/\.[a-z0-9]{2,5}$/i.test(base)) {
-            base = `${base}.${ext}`;
-          }
-          const relDir = segs.slice(0, -1).join('/');
-          const relativePath = relDir ? `${relDir}/${base}` : base;
+          const base = withExt(segs[segs.length - 1]);
+          const relativePath = [...segs.slice(0, -1), base].join('/');
           return { filename: base, relativePath };
         }
       } catch (_) {}
     }
 
-    const rawId = (el && el.id) || (el && el.getAttribute && el.getAttribute('alt')) || `${kind}-${index}`;
-    const cleanSlug = String(rawId)
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9-_]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 40) || `image-${index}`;
-    const filename = /\.[a-z0-9]{2,5}$/i.test(cleanSlug) ? cleanSlug : `${cleanSlug}.${ext}`;
+    const rawId = (el && el.id) || (el && el.getAttribute && (el.getAttribute('alt') || el.getAttribute('aria-label'))) || `${kind}-${index}`;
+    const cleanSlug =
+      String(rawId)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || `image-${index}`;
+    const filename = withExt(cleanSlug);
     return { filename, relativePath: filename };
   }
 
@@ -159,10 +210,11 @@
     try {
       const entries = performance.getEntriesByName(url, 'resource');
       if (entries && entries.length > 0) {
+        // encodedBodySize is the real file size; transferSize includes headers, so it is not used.
+        // Entries also exist for failed loads (a 404 page's body), which say nothing about the image.
         const last = entries[entries.length - 1];
+        if (last.responseStatus >= 400) return 0;
         if (last.encodedBodySize > 0) return last.encodedBodySize;
-        if (last.transferSize > 0) return last.transferSize;
-        if (last.decodedBodySize > 0) return last.decodedBodySize;
       }
     } catch (_) {}
     return 0;
@@ -175,34 +227,62 @@
     const mimeMatch = header.match(/^([^;]+)/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
     const isBase64 = header.includes(';base64');
-    const fileSize = isBase64
-      ? Math.floor((body.length * 3) / 4) - (body.endsWith('==') ? 2 : body.endsWith('=') ? 1 : 0)
-      : new Blob([body]).size;
+    let fileSize;
+    if (isBase64) {
+      const clean = body.replace(/\s+/g, '');
+      fileSize = Math.floor((clean.length * 3) / 4) - (clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0);
+    } else {
+      try {
+        fileSize = new Blob([decodeURIComponent(body)]).size;
+      } catch (_) {
+        fileSize = new Blob([body]).size;
+      }
+    }
     return { ok: true, fileSize: Math.max(0, fileSize), mimeType };
   }
 
-  function askBackgroundMeta(url) {
+  function sendRuntimeMessage(message) {
     return new Promise((resolve) => {
-      if (!url) {
-        resolve({ ok: false, fileSize: 0, mimeType: '' });
-        return;
-      }
-      if (url.startsWith('data:')) {
-        resolve(computeDataUriMeta(url));
-        return;
-      }
+      if (!runtimeAlive()) return resolve(null);
       try {
-        chrome.runtime.sendMessage({ type: 'GET_IMAGE_META', url }, (resp) => {
-          if (chrome.runtime.lastError || !resp) {
-            resolve({ ok: false, fileSize: 0, mimeType: '' });
-          } else {
-            resolve(resp);
-          }
+        chrome.runtime.sendMessage(message, (resp) => {
+          void chrome.runtime.lastError;
+          resolve(resp || null);
         });
       } catch (_) {
-        resolve({ ok: false, fileSize: 0, mimeType: '' });
+        resolve(null);
       }
     });
+  }
+
+  async function fetchBlobLocally(url) {
+    const resp = await fetch(url, { credentials: 'include' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.blob();
+  }
+
+  async function lookupMeta(url) {
+    if (!url) return { ok: false, fileSize: 0, mimeType: '' };
+    if (url.startsWith('data:')) return computeDataUriMeta(url);
+    // blob: URLs belong to the page, so only this script (not the extension's service worker) can read them.
+    if (url.startsWith('blob:')) {
+      try {
+        const blob = await fetchBlobLocally(url);
+        return { ok: true, fileSize: blob.size, mimeType: blob.type };
+      } catch (_) {
+        return { ok: false, fileSize: 0, mimeType: '' };
+      }
+    }
+    const resp = await sendRuntimeMessage({ type: 'GET_IMAGE_META', url });
+    return resp || { ok: false, fileSize: 0, mimeType: '' };
+  }
+
+  function askMeta(url) {
+    if (!metaCache.has(url)) {
+      if (metaCache.size > 1000) metaCache.delete(metaCache.keys().next().value);
+      metaCache.set(url, lookupMeta(url));
+    }
+    return metaCache.get(url);
   }
 
   function loadOffscreenDimensions(url) {
@@ -223,6 +303,352 @@
       };
       img.src = url;
     });
+  }
+
+  // Layout size of the box the image paints into. Unlike getBoundingClientRect this excludes borders
+  // (and padding for <img>) and ignores CSS transforms, so aspect and DPR math use the real slot size.
+  function paintBoxSize(el, computed, kind, rect) {
+    if (!(el instanceof HTMLElement) || !el.offsetWidth) {
+      return { w: Math.round(rect.width), h: Math.round(rect.height) };
+    }
+    const px = (v) => parseFloat(v) || 0;
+    let w = el.offsetWidth - px(computed.borderLeftWidth) - px(computed.borderRightWidth);
+    let h = el.offsetHeight - px(computed.borderTopWidth) - px(computed.borderBottomWidth);
+    if (kind === 'img') {
+      w -= px(computed.paddingLeft) + px(computed.paddingRight);
+      h -= px(computed.paddingTop) + px(computed.paddingBottom);
+    }
+    return { w: Math.max(0, Math.round(w)), h: Math.max(0, Math.round(h)) };
+  }
+
+  function serializeSvg(svg) {
+    try {
+      // XMLSerializer adds the SVG namespace that inline <svg> in HTML usually omits; without it the
+      // saved .svg file would not render.
+      return new XMLSerializer().serializeToString(svg);
+    } catch (_) {
+      return svg.outerHTML || '';
+    }
+  }
+
+  function stableElementId(el) {
+    let id = elementIds.get(el);
+    if (!id) {
+      id = `isc-item-${++elementIdCounter}`;
+      elementIds.set(el, id);
+    }
+    return id;
+  }
+
+  async function analyzeCandidate(candidate, index) {
+    const { el, kind, url, bgIndex } = candidate;
+    const rect = el.getBoundingClientRect();
+    const computed = window.getComputedStyle(el);
+    const objectFit = computed.objectFit || 'fill';
+    const { w: renderedW, h: renderedH } = paintBoxSize(el, computed, kind, rect);
+
+    let intrinsicW = 0;
+    let intrinsicH = 0;
+    let fileSize = 0;
+    let mimeType = '';
+    let altText = '';
+    let loadingAttr = '';
+    let hasDimensionAttrs = true;
+    let isInPicture = false;
+    let isDecorative = false;
+    let itemUrl = url;
+
+    if (kind === 'img') {
+      intrinsicW = el.naturalWidth || 0;
+      intrinsicH = el.naturalHeight || 0;
+      altText = el.getAttribute('alt');
+      isDecorative = altText === '' || el.getAttribute('role') === 'presentation' || el.getAttribute('aria-hidden') === 'true';
+      loadingAttr = (el.getAttribute('loading') || 'eager').toLowerCase();
+      hasDimensionAttrs =
+        (el.hasAttribute('width') && el.hasAttribute('height')) ||
+        Boolean(computed.aspectRatio && computed.aspectRatio !== 'auto');
+      isInPicture = Boolean(el.closest('picture'));
+    } else if (kind === 'svg') {
+      const vb = el.viewBox && el.viewBox.baseVal;
+      intrinsicW = Math.round((vb && vb.width) || renderedW);
+      intrinsicH = Math.round((vb && vb.height) || renderedH);
+      const svgMarkup = serializeSvg(el);
+      fileSize = new Blob([svgMarkup]).size;
+      mimeType = 'image/svg+xml';
+      itemUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+      altText = el.getAttribute('aria-label') || el.querySelector('title')?.textContent || '';
+    } else if (kind === 'bg') {
+      const dims = await loadOffscreenDimensions(url);
+      intrinsicW = dims.width;
+      intrinsicH = dims.height;
+      altText = el.getAttribute('aria-label') || '';
+    }
+
+    if (kind !== 'svg' && url) {
+      fileSize = getPerformanceResourceSize(url);
+      // Only hit the network when the timing API had no size, or the URL alone cannot tell the format.
+      if (!fileSize || !KNOWN_EXT.test(urlPath(url))) {
+        const meta = await askMeta(url);
+        if (!fileSize && meta.fileSize > 0) fileSize = meta.fileSize;
+        if (meta.mimeType) mimeType = meta.mimeType;
+      }
+    }
+
+    const format = detectFormat(itemUrl, mimeType, kind);
+    const isSvgFormat = format === 'SVG';
+    const { filename, relativePath } = extractOriginalFilename(kind === 'svg' ? '' : url, kind, format, index, el);
+    const recommendedBytes = computeRecommendedBytes(renderedW, renderedH, format, settings);
+
+    let aspectMismatchPct = 0;
+    const renderedRatio = renderedW > 0 && renderedH > 0 ? renderedW / renderedH : 0;
+    const intrinsicRatio = intrinsicW > 0 && intrinsicH > 0 ? intrinsicW / intrinsicH : 0;
+    if (renderedRatio > 0 && intrinsicRatio > 0 && kind !== 'svg') {
+      aspectMismatchPct = Number(
+        (Math.abs(renderedRatio - intrinsicRatio) / intrinsicRatio * 100).toFixed(1)
+      );
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const idealMaxW = Math.round(renderedW * dpr * (Number(settings.oversizeDprMultiplier) || 1.6));
+    const idealMaxH = Math.round(renderedH * dpr * (Number(settings.oversizeDprMultiplier) || 1.6));
+
+    const issues = [];
+    let severity = 'ok';
+    let isTooLarge = false;
+
+    const promoteSeverity = (level) => {
+      if (level === 'error') severity = 'error';
+      else if (level === 'warn' && severity === 'ok') severity = 'warn';
+    };
+
+    const hardCapBytes = (Number(settings.maxFileSizeKB) || 250) * 1024;
+    let savingsBytes = 0;
+    if (fileSize > 0) {
+      if (fileSize > hardCapBytes) {
+        isTooLarge = true;
+        savingsBytes = Math.max(0, fileSize - recommendedBytes);
+        issues.push({
+          code: 'FILE_OVER_CAP',
+          level: 'error',
+          text: `File size (${formatBytes(fileSize)}) exceeds ${settings.maxFileSizeKB} KB cap. Optimal target: ~${formatBytes(recommendedBytes)}.`
+        });
+        promoteSeverity('error');
+      } else if (fileSize > recommendedBytes * 1.35 && fileSize > 35 * 1024) {
+        isTooLarge = true;
+        savingsBytes = Math.max(0, fileSize - recommendedBytes);
+        issues.push({
+          code: 'FILE_OVER_RECOMMENDED',
+          level: 'error',
+          text: `Heavy for display size: ${formatBytes(fileSize)} vs. ~${formatBytes(recommendedBytes)} recommended.`
+        });
+        promoteSeverity('error');
+      }
+    }
+
+    const tol = Number(settings.aspectRatioTolerancePct) || 3.0;
+    if (aspectMismatchPct > tol && kind === 'img' && !isSvgFormat) {
+      // object-fit: none and scale-down crop/letterbox rather than stretch, just like cover/contain.
+      if (objectFit === 'cover' || objectFit === 'contain' || objectFit === 'scale-down' || objectFit === 'none') {
+        issues.push({
+          code: 'ASPECT_MASKED',
+          level: 'warn',
+          text: `Aspect ratio differs by ${aspectMismatchPct}% (${simplifyRatio(intrinsicW, intrinsicH)} vs ${simplifyRatio(renderedW, renderedH)}), cropped/fitted via object-fit: ${objectFit}.`
+        });
+        promoteSeverity('warn');
+      } else {
+        issues.push({
+          code: 'ASPECT_DISTORTED',
+          level: 'error',
+          text: `Distorted aspect ratio (${aspectMismatchPct}% mismatch): intrinsic ${simplifyRatio(intrinsicW, intrinsicH)} stretched into ${simplifyRatio(renderedW, renderedH)}.`
+        });
+        promoteSeverity('error');
+      }
+    }
+
+    // SVGs scale without loss, so their declared size says nothing about being over- or under-sized.
+    if (
+      kind !== 'svg' &&
+      !isSvgFormat &&
+      intrinsicW > 0 &&
+      renderedW > 0 &&
+      intrinsicW > idealMaxW &&
+      intrinsicH > idealMaxH &&
+      intrinsicW * intrinsicH - renderedW * renderedH * dpr * dpr > 150000
+    ) {
+      const oversizeFactor = (intrinsicW / (renderedW * dpr)).toFixed(1);
+      if (fileSize > 30 * 1024) isTooLarge = true;
+      issues.push({
+        code: 'OVERSIZED_DIMENSIONS',
+        level: fileSize > 80 * 1024 ? 'error' : 'warn',
+        text: `Intrinsic resolution (${intrinsicW}×${intrinsicH}) is ${oversizeFactor}× larger than needed for ${renderedW}×${renderedH} @${dpr}x DPR.`
+      });
+      promoteSeverity(fileSize > 80 * 1024 ? 'error' : 'warn');
+    }
+
+    if (
+      kind === 'img' &&
+      !isSvgFormat &&
+      intrinsicW > 0 &&
+      renderedW > 48 &&
+      intrinsicW < renderedW * 0.85
+    ) {
+      issues.push({
+        code: 'UPSCALED_BLURRY',
+        level: 'warn',
+        text: `Upscaled image: ${intrinsicW}×${intrinsicH}px stretched to ${renderedW}×${renderedH}px (may appear blurry).`
+      });
+      promoteSeverity('warn');
+    }
+
+    if (
+      (format === 'PNG' || format === 'JPEG') &&
+      fileSize > 55 * 1024
+    ) {
+      isTooLarge = true;
+      issues.push({
+        code: 'LEGACY_FORMAT',
+        level: 'warn',
+        text: format === 'PNG'
+          ? `Unoptimized PNG (${formatBytes(fileSize)}) — can likely be compressed losslessly.`
+          : `Heavy JPEG (${formatBytes(fileSize)}) — can likely be re-encoded smaller at high quality.`
+      });
+      promoteSeverity('warn');
+    }
+
+    if (kind === 'img') {
+      // alt="" is the correct markup for decorative images, so only a missing attribute is flagged.
+      if (altText === null && !isDecorative) {
+        issues.push({
+          code: 'MISSING_ALT',
+          level: 'warn',
+          text: 'Missing alt attribute (accessibility & SEO issue). Use alt="" if the image is decorative.'
+        });
+        promoteSeverity('warn');
+      }
+      if (!hasDimensionAttrs) {
+        issues.push({
+          code: 'CLS_RISK',
+          level: 'warn',
+          text: 'Missing explicit width/height attributes or CSS aspect-ratio (can cause layout shift / CLS).'
+        });
+        promoteSeverity('warn');
+      }
+      // Position in the document's first screen, regardless of how far the user has scrolled.
+      const docTop = rect.top + window.scrollY;
+      const inInitialViewport = docTop < window.innerHeight && rect.bottom + window.scrollY > 0;
+      if (inInitialViewport && loadingAttr === 'lazy' && renderedW * renderedH > 40000) {
+        issues.push({
+          code: 'LCP_LAZY',
+          level: 'warn',
+          text: 'Above-the-fold image uses loading="lazy", which can delay Largest Contentful Paint (LCP).'
+        });
+        promoteSeverity('warn');
+      }
+    }
+
+    const baseId = stableElementId(el);
+    const id = bgIndex ? `${baseId}-bg${bgIndex}` : baseId;
+    const item = {
+      id,
+      kind,
+      url: itemUrl || `inline-${kind}-${index}`,
+      shortName: filename,
+      originalFilename: filename,
+      relativePath,
+      format,
+      fileSize,
+      fileSizeFormatted: formatBytes(fileSize),
+      recommendedBytes,
+      recommendedFormatted: formatBytes(recommendedBytes),
+      savingsBytes,
+      savingsFormatted: savingsBytes > 0 ? formatBytes(savingsBytes) : '0 KB',
+      isTooLarge,
+      renderedW,
+      renderedH,
+      intrinsicW,
+      intrinsicH,
+      dpr: Number(dpr.toFixed(2)),
+      renderedRatioLabel: simplifyRatio(renderedW, renderedH),
+      intrinsicRatioLabel: simplifyRatio(intrinsicW, intrinsicH),
+      aspectMismatchPct,
+      objectFit,
+      altText: altText ?? null,
+      isDecorative,
+      loadingAttr,
+      isInPicture,
+      severity,
+      issues
+    };
+
+    return { item, el };
+  }
+
+  function isTooSmall(rect, minPx) {
+    return rect.width < 1 || rect.height < 1 || (rect.width < minPx && rect.height < minPx);
+  }
+
+  // Parses every url(...) in a computed background-image (which Chrome serializes as url("...")).
+  function extractCssUrls(value) {
+    const urls = [];
+    const re = /url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)\s]*))\s*\)/g;
+    let m;
+    while ((m = re.exec(value))) {
+      const raw = (m[1] ?? m[2] ?? m[3] ?? '').replace(/\\(.)/g, '$1');
+      if (raw) urls.push(raw);
+    }
+    return urls;
+  }
+
+  function collectCandidates() {
+    const list = [];
+    const seenEls = new Set();
+    const minPx = Number(settings.minDimensionPx) || 24;
+
+    document.querySelectorAll('img').forEach((img) => {
+      if (seenEls.has(img)) return;
+      const rect = img.getBoundingClientRect();
+      if (isTooSmall(rect, minPx)) return;
+      const style = window.getComputedStyle(img);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return;
+      const url = img.currentSrc || img.src || img.getAttribute('data-src') || '';
+      seenEls.add(img);
+      list.push({ el: img, kind: 'img', url });
+    });
+
+    if (settings.scanInlineSvgs) {
+      document.querySelectorAll('svg').forEach((svg) => {
+        if (seenEls.has(svg)) return;
+        if (hostEl && hostEl.contains(svg)) return;
+        // Nested <svg> elements are part of their outer graphic.
+        if (svg.parentElement && svg.parentElement.closest('svg')) return;
+        const rect = svg.getBoundingClientRect();
+        if (isTooSmall(rect, minPx)) return;
+        const style = window.getComputedStyle(svg);
+        if (style.display === 'none' || style.visibility === 'hidden') return;
+        seenEls.add(svg);
+        list.push({ el: svg, kind: 'svg', url: '' });
+      });
+    }
+
+    if (settings.scanCssBackgrounds) {
+      document.querySelectorAll('body, body *').forEach((el) => {
+        if (seenEls.has(el) || el === hostEl) return;
+        if (!(el instanceof HTMLElement)) return;
+        const bg = window.getComputedStyle(el).backgroundImage;
+        if (!bg || bg === 'none' || !bg.includes('url(')) return;
+        const urls = extractCssUrls(bg).filter((u) => !(u.startsWith('data:image/svg+xml') && u.length < 200));
+        if (!urls.length) return;
+        const rect = el.getBoundingClientRect();
+        if (isTooSmall(rect, minPx)) return;
+        seenEls.add(el);
+        urls.forEach((url, i) => {
+          const absolute = url.startsWith('data:') ? url : new URL(url, document.baseURI).href;
+          list.push({ el, kind: 'bg', url: absolute, bgIndex: i });
+        });
+      });
+    }
+
+    return list;
   }
 
   function ensureShadowDom() {
@@ -473,301 +899,69 @@
 
     tooltipEl = document.createElement('div');
     tooltipEl.className = 'isc-tooltip';
+    // Keep the tooltip open while the pointer is on it so its buttons can be clicked.
+    tooltipEl.addEventListener('mouseenter', () => clearTimeout(hoverClearTimer));
+    tooltipEl.addEventListener('mouseleave', () => scheduleHoverClear());
 
     shadowRoot.appendChild(style);
     shadowRoot.appendChild(badgesLayer);
     shadowRoot.appendChild(tooltipEl);
+    overlayNodes.clear();
+    tooltipItemId = null;
     document.documentElement.appendChild(hostEl);
   }
 
-  async function analyzeCandidate(candidate, index) {
-    const { el, kind, url } = candidate;
-    const rect = el.getBoundingClientRect();
-    const renderedW = Math.round(rect.width);
-    const renderedH = Math.round(rect.height);
-
-    let intrinsicW = 0;
-    let intrinsicH = 0;
-    let fileSize = 0;
-    let mimeType = '';
-    let altText = '';
-    let loadingAttr = '';
-    let hasDimensionAttrs = true;
-    let isInPicture = false;
-    let svgMarkup = '';
-
-    const computed = window.getComputedStyle(el);
-    const objectFit = computed.objectFit || 'fill';
-
-    if (kind === 'img') {
-      intrinsicW = el.naturalWidth || 0;
-      intrinsicH = el.naturalHeight || 0;
-      altText = el.getAttribute('alt');
-      loadingAttr = (el.getAttribute('loading') || 'eager').toLowerCase();
-      hasDimensionAttrs =
-        (el.hasAttribute('width') && el.hasAttribute('height')) ||
-        Boolean(computed.aspectRatio && computed.aspectRatio !== 'auto');
-      isInPicture = Boolean(el.closest('picture'));
-    } else if (kind === 'svg') {
-      const vb = el.viewBox && el.viewBox.baseVal;
-      intrinsicW = Math.round((vb && vb.width) || renderedW);
-      intrinsicH = Math.round((vb && vb.height) || renderedH);
-      svgMarkup = el.outerHTML || '';
-      fileSize = new Blob([svgMarkup]).size;
-      mimeType = 'image/svg+xml';
-      altText = el.getAttribute('aria-label') || el.querySelector('title')?.textContent || '';
-    } else if (kind === 'bg') {
-      const dims = await loadOffscreenDimensions(url);
-      intrinsicW = dims.width;
-      intrinsicH = dims.height;
-      altText = el.getAttribute('aria-label') || '';
+  function setHover(id) {
+    clearTimeout(hoverClearTimer);
+    if (hoveredItemId !== id) {
+      hoveredItemId = id;
+      scheduleOverlayPositionUpdate();
     }
-
-    if (kind !== 'svg' && url) {
-      fileSize = getPerformanceResourceSize(url);
-      if (!fileSize || !mimeType) {
-        const meta = await askBackgroundMeta(url);
-        if (meta.fileSize > 0) fileSize = meta.fileSize;
-        if (meta.mimeType) mimeType = meta.mimeType;
-      }
-    }
-
-    const format = detectFormat(url, mimeType, kind);
-    const { filename, relativePath } = extractOriginalFilename(url, kind, format, index, el);
-    const recommendedBytes = computeRecommendedBytes(renderedW, renderedH, format, settings);
-
-    let aspectMismatchPct = 0;
-    const renderedRatio = renderedW > 0 && renderedH > 0 ? renderedW / renderedH : 0;
-    const intrinsicRatio = intrinsicW > 0 && intrinsicH > 0 ? intrinsicW / intrinsicH : 0;
-    if (renderedRatio > 0 && intrinsicRatio > 0 && kind !== 'svg') {
-      aspectMismatchPct = Number(
-        (Math.abs(renderedRatio - intrinsicRatio) / intrinsicRatio * 100).toFixed(1)
-      );
-    }
-
-    const dpr = window.devicePixelRatio || 1;
-    const idealMaxW = Math.round(renderedW * dpr * (Number(settings.oversizeDprMultiplier) || 1.6));
-    const idealMaxH = Math.round(renderedH * dpr * (Number(settings.oversizeDprMultiplier) || 1.6));
-
-    const issues = [];
-    let severity = 'ok';
-    let isTooLarge = false;
-
-    const promoteSeverity = (level) => {
-      if (level === 'error') severity = 'error';
-      else if (level === 'warn' && severity === 'ok') severity = 'warn';
-    };
-
-    const hardCapBytes = (Number(settings.maxFileSizeKB) || 250) * 1024;
-    let savingsBytes = 0;
-    if (fileSize > 0) {
-      if (fileSize > hardCapBytes) {
-        isTooLarge = true;
-        savingsBytes = Math.max(0, fileSize - recommendedBytes);
-        issues.push({
-          code: 'FILE_OVER_CAP',
-          level: 'error',
-          text: `File size (${formatBytes(fileSize)}) exceeds ${settings.maxFileSizeKB} KB cap. Optimal target: ~${formatBytes(recommendedBytes)}.`
-        });
-        promoteSeverity('error');
-      } else if (fileSize > recommendedBytes * 1.35 && fileSize > 35 * 1024) {
-        isTooLarge = true;
-        savingsBytes = Math.max(0, fileSize - recommendedBytes);
-        issues.push({
-          code: 'FILE_OVER_RECOMMENDED',
-          level: 'error',
-          text: `Heavy for display size: ${formatBytes(fileSize)} vs. ~${formatBytes(recommendedBytes)} recommended.`
-        });
-        promoteSeverity('error');
-      }
-    }
-
-    const tol = Number(settings.aspectRatioTolerancePct) || 3.0;
-    if (aspectMismatchPct > tol && kind === 'img') {
-      if (objectFit === 'cover' || objectFit === 'contain' || objectFit === 'scale-down') {
-        issues.push({
-          code: 'ASPECT_MASKED',
-          level: 'warn',
-          text: `Aspect ratio differs by ${aspectMismatchPct}% (${simplifyRatio(intrinsicW, intrinsicH)} vs ${simplifyRatio(renderedW, renderedH)}), cropped/fitted via object-fit: ${objectFit}.`
-        });
-        promoteSeverity('warn');
-      } else {
-        issues.push({
-          code: 'ASPECT_DISTORTED',
-          level: 'error',
-          text: `Distorted aspect ratio (${aspectMismatchPct}% mismatch): intrinsic ${simplifyRatio(intrinsicW, intrinsicH)} stretched into ${simplifyRatio(renderedW, renderedH)}.`
-        });
-        promoteSeverity('error');
-      }
-    }
-
-    if (
-      kind !== 'svg' &&
-      intrinsicW > 0 &&
-      renderedW > 0 &&
-      intrinsicW > idealMaxW &&
-      intrinsicH > idealMaxH &&
-      intrinsicW * intrinsicH - renderedW * renderedH * dpr * dpr > 150000
-    ) {
-      const oversizeFactor = (intrinsicW / (renderedW * dpr)).toFixed(1);
-      if (fileSize > 30 * 1024) isTooLarge = true;
-      issues.push({
-        code: 'OVERSIZED_DIMENSIONS',
-        level: fileSize > 80 * 1024 ? 'error' : 'warn',
-        text: `Intrinsic resolution (${intrinsicW}×${intrinsicH}) is ${oversizeFactor}× larger than needed for ${renderedW}×${renderedH} @${dpr}x DPR.`
-      });
-      promoteSeverity(fileSize > 80 * 1024 ? 'error' : 'warn');
-    }
-
-    if (
-      kind === 'img' &&
-      intrinsicW > 0 &&
-      renderedW > 48 &&
-      intrinsicW < renderedW * 0.85
-    ) {
-      issues.push({
-        code: 'UPSCALED_BLURRY',
-        level: 'warn',
-        text: `Upscaled image: ${intrinsicW}×${intrinsicH}px stretched to ${renderedW}×${renderedH}px (may appear blurry).`
-      });
-      promoteSeverity('warn');
-    }
-
-    if (
-      (format === 'PNG' || format === 'JPEG' || format === 'GIF') &&
-      fileSize > 55 * 1024
-    ) {
-      isTooLarge = true;
-      issues.push({
-        code: 'LEGACY_FORMAT',
-        level: 'warn',
-        text: `Unoptimized ${format} (${formatBytes(fileSize)}) — can be losslessly/high-fidelity compressed.`
-      });
-      promoteSeverity('warn');
-    }
-
-    if (kind === 'img') {
-      if (altText === null || altText === '') {
-        issues.push({
-          code: 'MISSING_ALT',
-          level: 'warn',
-          text: altText === null ? 'Missing alt attribute (accessibility & SEO issue).' : 'Empty alt="" attribute on content image.'
-        });
-        promoteSeverity('warn');
-      }
-      if (!hasDimensionAttrs) {
-        issues.push({
-          code: 'CLS_RISK',
-          level: 'warn',
-          text: 'Missing explicit width/height attributes or CSS aspect-ratio (can cause layout shift / CLS).'
-        });
-        promoteSeverity('warn');
-      }
-      const inInitialViewport = rect.top >= 0 && rect.top < window.innerHeight;
-      if (inInitialViewport && loadingAttr === 'lazy' && renderedW * renderedH > 40000) {
-        issues.push({
-          code: 'LCP_LAZY',
-          level: 'warn',
-          text: 'Above-the-fold image uses loading="lazy", which can delay Largest Contentful Paint (LCP).'
-        });
-        promoteSeverity('warn');
-      }
-    }
-
-    const id = `isc-item-${++scanCounter}`;
-    const item = {
-      id,
-      kind,
-      url: url || (kind === 'svg' ? `data:image/svg+xml;utf8,${encodeURIComponent(svgMarkup)}` : `inline-${kind}-${index}`),
-      shortName: filename,
-      originalFilename: filename,
-      relativePath,
-      format,
-      fileSize,
-      fileSizeFormatted: formatBytes(fileSize),
-      recommendedBytes,
-      recommendedFormatted: formatBytes(recommendedBytes),
-      savingsBytes,
-      savingsFormatted: savingsBytes > 0 ? formatBytes(savingsBytes) : '0 KB',
-      isTooLarge,
-      renderedW,
-      renderedH,
-      intrinsicW,
-      intrinsicH,
-      dpr: Number(dpr.toFixed(2)),
-      renderedRatioLabel: simplifyRatio(renderedW, renderedH),
-      intrinsicRatioLabel: simplifyRatio(intrinsicW, intrinsicH),
-      aspectMismatchPct,
-      objectFit,
-      altText: altText ?? null,
-      loadingAttr,
-      isInPicture,
-      severity,
-      issues
-    };
-
-    elementMap.set(id, el);
-    itemByElement.set(el, item);
-    return item;
   }
 
-  function collectCandidates() {
-    const list = [];
-    const seenEls = new Set();
-    const minPx = Number(settings.minDimensionPx) || 24;
-
-    document.querySelectorAll('img').forEach((img) => {
-      if (seenEls.has(img)) return;
-      const rect = img.getBoundingClientRect();
-      if (rect.width < minPx && rect.height < minPx) return;
-      const style = window.getComputedStyle(img);
-      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return;
-      const url = img.currentSrc || img.src || img.getAttribute('data-src') || '';
-      seenEls.add(img);
-      list.push({ el: img, kind: 'img', url });
-    });
-
-    if (settings.scanInlineSvgs) {
-      document.querySelectorAll('svg').forEach((svg) => {
-        if (seenEls.has(svg)) return;
-        if (hostEl && hostEl.contains(svg)) return;
-        const rect = svg.getBoundingClientRect();
-        if (rect.width < minPx || rect.height < minPx) return;
-        const style = window.getComputedStyle(svg);
-        if (style.display === 'none' || style.visibility === 'hidden') return;
-        seenEls.add(svg);
-        list.push({ el: svg, kind: 'svg', url: 'inline-svg' });
-      });
-    }
-
-    if (settings.scanCssBackgrounds) {
-      const allEls = document.querySelectorAll('div, section, header, figure, a, span, article, main');
-      allEls.forEach((el) => {
-        if (seenEls.has(el)) return;
-        if (hostEl && hostEl.contains(el)) return;
-        const style = window.getComputedStyle(el);
-        const bg = style.backgroundImage;
-        if (!bg || bg === 'none' || !bg.includes('url(')) return;
-        const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
-        if (!match || !match[1]) return;
-        const rawUrl = match[1];
-        if (rawUrl.startsWith('data:image/svg+xml') && rawUrl.length < 200) return;
-        const rect = el.getBoundingClientRect();
-        if (rect.width < minPx || rect.height < minPx) return;
-        seenEls.add(el);
-        list.push({ el, kind: 'bg', url: rawUrl });
-      });
-    }
-
-    return list;
+  function scheduleHoverClear() {
+    clearTimeout(hoverClearTimer);
+    hoverClearTimer = setTimeout(() => {
+      if (hoveredItemId !== null) {
+        hoveredItemId = null;
+        scheduleOverlayPositionUpdate();
+      }
+    }, HOVER_GRACE_MS);
   }
 
-  function renderTooltip(item, anchorRect) {
-    if (!tooltipEl || !item) {
-      if (tooltipEl) tooltipEl.classList.remove('visible');
-      return;
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      // Clipboard API is unavailable on insecure (http) pages; fall back to execCommand.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-1000px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (_) {}
+      ta.remove();
+      return ok;
     }
+  }
 
+  async function openUrl(url) {
+    // Chrome blocks opening data: URLs in a new tab, so open those as blob: URLs instead.
+    if (url.startsWith('data:')) {
+      const blob = await (await fetch(url)).blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } else {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
+  function renderTooltipContent(item) {
     const statusLabel =
       item.severity === 'error' ? 'Needs Fix' : item.severity === 'warn' ? 'Warning' : 'Optimized';
 
@@ -777,25 +971,27 @@
             ${item.issues
               .map(
                 (iss) =>
-                  `<div class="isc-issue-item"><span>${iss.level === 'error' ? '●' : '▲'}</span><span>${iss.text}</span></div>`
+                  `<div class="isc-issue-item"><span>${iss.level === 'error' ? '●' : '▲'}</span><span>${escapeHtml(iss.text)}</span></div>`
               )
               .join('')}
           </div>`
         : '';
 
+    const altLabel = item.kind === 'img' ? (item.isDecorative ? 'Decorative' : item.altText ? 'Alt OK' : 'Missing Alt') : item.kind.toUpperCase();
+
     tooltipEl.innerHTML = `
       <div class="isc-tt-header">
-        <div class="isc-tt-title" title="${item.originalFilename}">${item.originalFilename}</div>
+        <div class="isc-tt-title" title="${escapeHtml(item.originalFilename)}">${escapeHtml(item.originalFilename)}</div>
         <div class="isc-tt-badges">
-          <span class="isc-tag fmt">${item.format}</span>
-          <span class="isc-tag status-${item.severity}">${statusLabel}</span>
+          <span class="isc-tag fmt">${escapeHtml(item.format)}</span>
+          <span class="isc-tag status-${escapeHtml(item.severity)}">${statusLabel}</span>
         </div>
       </div>
       <div class="isc-tt-grid">
         <div class="isc-metric">
           <div class="isc-metric-label">File Weight</div>
-          <div class="isc-metric-val">${item.fileSizeFormatted}</div>
-          <div class="isc-metric-sub">Target: ≤ ${item.recommendedFormatted}</div>
+          <div class="isc-metric-val">${escapeHtml(item.fileSizeFormatted)}</div>
+          <div class="isc-metric-sub">Target: ≤ ${escapeHtml(item.recommendedFormatted)}</div>
         </div>
         <div class="isc-metric">
           <div class="isc-metric-label">Dimensions (Px)</div>
@@ -804,24 +1000,16 @@
         </div>
         <div class="isc-metric">
           <div class="isc-metric-label">Aspect Ratio</div>
-          <div class="isc-metric-val">${item.renderedRatioLabel}</div>
+          <div class="isc-metric-val">${escapeHtml(item.renderedRatioLabel)}</div>
           <div class="isc-metric-sub">${
-            item.aspectMismatchPct > 0
-              ? `${item.aspectMismatchPct}% diff (${item.objectFit})`
-              : 'Exact match'
+            item.aspectMismatchPct > 0 ? `${item.aspectMismatchPct}% diff (${escapeHtml(item.objectFit)})` : 'Exact match'
           }</div>
         </div>
         <div class="isc-metric">
           <div class="isc-metric-label">Alt & Loading</div>
-          <div class="isc-metric-val">${
-            item.kind === 'img'
-              ? item.altText
-                ? 'Alt OK'
-                : 'Missing Alt'
-              : item.kind.toUpperCase()
-          }</div>
+          <div class="isc-metric-val">${altLabel}</div>
           <div class="isc-metric-sub">${
-            item.kind === 'img' ? `loading="${item.loadingAttr}"` : `DPR ${item.dpr}x`
+            item.kind === 'img' ? `loading="${escapeHtml(item.loadingAttr)}"` : `DPR ${item.dpr}x`
           }</div>
         </div>
       </div>
@@ -830,36 +1018,32 @@
         <span>${pinnedItemId === item.id ? '📌 Pinned (click badge to unpin)' : 'Click badge to pin details'}</span>
         <div class="isc-tt-actions">
           <button class="isc-btn" data-action="copy-url">Copy URL</button>
-          ${
-            item.url && !item.url.startsWith('inline-')
-              ? `<button class="isc-btn" data-action="open-url">Open</button>`
-              : ''
-          }
+          ${item.url && !item.url.startsWith('inline-') ? `<button class="isc-btn" data-action="open-url">Open</button>` : ''}
         </div>
       </div>
     `;
 
     tooltipEl.querySelectorAll('.isc-btn').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const act = btn.getAttribute('data-action');
         if (act === 'copy-url') {
-          navigator.clipboard?.writeText(item.url);
-          btn.textContent = 'Copied!';
+          const ok = await copyText(item.url);
+          btn.textContent = ok ? 'Copied!' : 'Copy failed';
           setTimeout(() => {
             btn.textContent = 'Copy URL';
           }, 1200);
         } else if (act === 'open-url') {
-          window.open(item.url, '_blank', 'noopener');
+          openUrl(item.url).catch(() => {});
         }
       });
     });
+  }
 
-    tooltipEl.classList.add('visible');
-
+  function positionTooltip(anchorRect) {
     const ttW = 340;
     const ttH = tooltipEl.offsetHeight || 210;
-    let left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - ttW - 8));
+    const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - ttW - 8));
     let top = anchorRect.bottom + 8;
     if (top + ttH > window.innerHeight - 8) {
       top = Math.max(8, anchorRect.top - ttH - 8);
@@ -868,21 +1052,34 @@
     tooltipEl.style.top = `${Math.round(top)}px`;
   }
 
+  function createOverlayNode(item) {
+    const box = document.createElement('div');
+    const pill = document.createElement('div');
+    pill.addEventListener('mouseenter', () => setHover(item.id));
+    pill.addEventListener('mouseleave', () => scheduleHoverClear());
+    pill.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pinnedItemId = pinnedItemId === item.id ? null : item.id;
+      tooltipItemId = null; // force the pinned/unpinned footer text to refresh
+      renderOverlays();
+    });
+    box.appendChild(pill);
+    return { box, pill, key: '' };
+  }
+
+  // Updates overlay boxes in place (rather than rebuilding them) so the element under the pointer
+  // survives re-renders and hover state stays stable.
   function renderOverlays() {
     ensureShadowDom();
     if (!badgesLayer) return;
 
-    badgesLayer.innerHTML = '';
-
-    if (!settings.enabled || settings.overlayMode === 'off') {
-      if (tooltipEl) tooltipEl.classList.remove('visible');
-      return;
-    }
-
+    const visible = new Set();
     let activeTooltipItem = null;
     let activeTooltipRect = null;
+    const showAny = settings.enabled && settings.overlayMode !== 'off';
 
-    for (const item of analyzedItems) {
+    for (const item of showAny ? analyzedItems : []) {
       const el = elementMap.get(item.id);
       if (!el || !document.documentElement.contains(el)) continue;
 
@@ -902,47 +1099,28 @@
         continue;
       }
 
-      const isHoverOnly = settings.overlayMode === 'hover';
-      const isActiveItem =
-        hoveredItemId === item.id || pinnedItemId === item.id || highlightedItemId === item.id;
+      const isActiveItem = hoveredItemId === item.id || pinnedItemId === item.id || highlightedItemId === item.id;
+      if (settings.overlayMode === 'hover' && !isActiveItem) continue;
 
-      if (isHoverOnly && !isActiveItem) {
-        continue;
+      let node = overlayNodes.get(item.id);
+      if (!node) {
+        node = createOverlayNode(item);
+        overlayNodes.set(item.id, node);
       }
-
-      const box = document.createElement('div');
-      box.className = `isc-box status-${item.severity}${
-        highlightedItemId === item.id ? ' pulse-focus' : ''
-      }`;
-      box.style.left = `${Math.round(rect.left)}px`;
-      box.style.top = `${Math.round(rect.top)}px`;
-      box.style.width = `${Math.round(rect.width)}px`;
-      box.style.height = `${Math.round(rect.height)}px`;
-
-      const pill = document.createElement('div');
-      pill.className = `isc-pill status-${item.severity}`;
       const ratioFlag = item.aspectMismatchPct > settings.aspectRatioTolerancePct ? ' · ⚠️ Ratio' : '';
-      pill.innerHTML = `<span class="dot"></span><span>${item.fileSizeFormatted} · ${item.renderedW}×${item.renderedH}${ratioFlag}</span>`;
-
-      pill.addEventListener('mouseenter', () => {
-        hoveredItemId = item.id;
-        renderOverlays();
-      });
-      pill.addEventListener('mouseleave', () => {
-        if (hoveredItemId === item.id) {
-          hoveredItemId = null;
-          renderOverlays();
-        }
-      });
-      pill.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        pinnedItemId = pinnedItemId === item.id ? null : item.id;
-        renderOverlays();
-      });
-
-      box.appendChild(pill);
-      badgesLayer.appendChild(box);
+      const key = `${item.severity}|${highlightedItemId === item.id}|${item.fileSizeFormatted}|${item.renderedW}x${item.renderedH}${ratioFlag}`;
+      if (node.key !== key) {
+        node.key = key;
+        node.box.className = `isc-box status-${item.severity}${highlightedItemId === item.id ? ' pulse-focus' : ''}`;
+        node.pill.className = `isc-pill status-${item.severity}`;
+        node.pill.innerHTML = `<span class="dot"></span><span>${escapeHtml(item.fileSizeFormatted)} · ${item.renderedW}×${item.renderedH}${ratioFlag}</span>`;
+      }
+      node.box.style.left = `${Math.round(rect.left)}px`;
+      node.box.style.top = `${Math.round(rect.top)}px`;
+      node.box.style.width = `${Math.round(rect.width)}px`;
+      node.box.style.height = `${Math.round(rect.height)}px`;
+      if (node.box.parentNode !== badgesLayer) badgesLayer.appendChild(node.box);
+      visible.add(item.id);
 
       if (pinnedItemId === item.id || (!pinnedItemId && hoveredItemId === item.id)) {
         activeTooltipItem = item;
@@ -950,15 +1128,25 @@
       }
     }
 
+    for (const [id, node] of overlayNodes) {
+      if (!visible.has(id)) node.box.remove();
+    }
+
     if (activeTooltipItem && activeTooltipRect) {
-      renderTooltip(activeTooltipItem, activeTooltipRect);
+      if (tooltipItemId !== activeTooltipItem.id) {
+        renderTooltipContent(activeTooltipItem);
+        tooltipItemId = activeTooltipItem.id;
+      }
+      tooltipEl.classList.add('visible');
+      positionTooltip(activeTooltipRect);
     } else if (tooltipEl) {
       tooltipEl.classList.remove('visible');
+      tooltipItemId = null;
     }
   }
 
   function scheduleOverlayPositionUpdate() {
-    if (rafPending) return;
+    if (rafPending || !active) return;
     rafPending = true;
     requestAnimationFrame(() => {
       rafPending = false;
@@ -966,31 +1154,68 @@
     });
   }
 
-  async function runFullScan() {
+  async function mapLimit(list, limit, fn) {
+    const out = new Array(list.length);
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, list.length) }, async () => {
+      while (next < list.length) {
+        const i = next++;
+        out[i] = await fn(list[i], i);
+      }
+    });
+    await Promise.all(workers);
+    return out;
+  }
+
+  async function performScan() {
     ensureShadowDom();
-    elementMap.clear();
     const candidates = collectCandidates();
-    const results = [];
+    const analyzed = await mapLimit(candidates, ANALYZE_CONCURRENCY, (c, i) => analyzeCandidate(c, i + 1));
 
-    for (let i = 0; i < candidates.length; i++) {
-      const item = await analyzeCandidate(candidates[i], i + 1);
-      results.push(item);
+    const nextMap = new Map();
+    for (const { item, el } of analyzed) {
+      nextMap.set(item.id, el);
+      if (!item.id.includes('-bg')) itemByElement.set(el, item); // hover maps to an element's first image
     }
-
-    analyzedItems = results;
+    elementMap = nextMap;
+    analyzedItems = analyzed.map((a) => a.item);
+    tooltipItemId = null;
     renderOverlays();
-
-    const issueCount = analyzedItems.filter((i) => i.severity !== 'ok').length;
-    try {
-      chrome.runtime?.sendMessage?.({
-        type: 'UPDATE_BADGE',
-        issueCount,
-        totalCount: analyzedItems.length,
-        enabled: settings.enabled
-      });
-    } catch (_) {}
-
+    updateBadge();
     return getSummaryPayload();
+  }
+
+  // Scans never overlap: a request during a scan queues exactly one follow-up scan, and every
+  // caller gets the result of a scan that started after its request.
+  function runFullScan() {
+    active = true;
+    startObserving();
+    if (queuedScan) return queuedScan;
+    if (runningScan) {
+      queuedScan = runningScan.then(() => {
+        queuedScan = null;
+        return startScan();
+      });
+      return queuedScan;
+    }
+    return startScan();
+  }
+
+  function startScan() {
+    runningScan = performScan().finally(() => {
+      runningScan = null;
+    });
+    return runningScan;
+  }
+
+  function updateBadge() {
+    const issueCount = analyzedItems.filter((i) => i.severity !== 'ok').length;
+    sendRuntimeMessage({
+      type: 'UPDATE_BADGE',
+      issueCount,
+      totalCount: analyzedItems.length,
+      enabled: settings.enabled
+    });
   }
 
   function getSummaryPayload() {
@@ -1021,49 +1246,33 @@
     };
   }
 
-  document.addEventListener(
-    'mouseover',
-    (e) => {
-      if (!settings.enabled || pinnedItemId) return;
-      const target = e.target;
-      if (!target || !(target instanceof Element)) return;
-      const item = itemByElement.get(target);
-      if (item && hoveredItemId !== item.id) {
-        hoveredItemId = item.id;
-        scheduleOverlayPositionUpdate();
-      }
-    },
-    { passive: true }
-  );
+  function onMouseOver(e) {
+    if (!active || !settings.enabled || pinnedItemId) return;
+    const target = e.target;
+    if (!target || !(target instanceof Element)) return;
+    const item = itemByElement.get(target);
+    if (item) setHover(item.id);
+  }
 
-  document.addEventListener(
-    'mouseout',
-    (e) => {
-      if (!settings.enabled || pinnedItemId) return;
-      const target = e.target;
-      if (!target || !(target instanceof Element)) return;
-      const item = itemByElement.get(target);
-      if (item && hoveredItemId === item.id) {
-        hoveredItemId = null;
-        scheduleOverlayPositionUpdate();
-      }
-    },
-    { passive: true }
-  );
-
-  window.addEventListener('scroll', scheduleOverlayPositionUpdate, { passive: true, capture: true });
-  window.addEventListener('resize', scheduleOverlayPositionUpdate, { passive: true });
+  function onMouseOut(e) {
+    if (!active || !settings.enabled || pinnedItemId) return;
+    const target = e.target;
+    if (!target || !(target instanceof Element)) return;
+    const item = itemByElement.get(target);
+    if (item && hoveredItemId === item.id) scheduleHoverClear();
+  }
 
   const observer = new MutationObserver((mutations) => {
-    if (!settings.enabled) return;
+    if (!active || !settings.enabled) return;
     let relevant = false;
     for (const m of mutations) {
-      if (hostEl && hostEl.contains(m.target)) continue;
-      if (m.type === 'attributes' && (m.attributeName === 'src' || m.attributeName === 'srcset')) {
+      if (hostEl && (m.target === hostEl || hostEl.contains(m.target))) continue;
+      if (m.type === 'attributes') {
         relevant = true;
         break;
       }
-      if (m.addedNodes && m.addedNodes.length > 0) {
+      // Our own overlay host being (re)attached is not a page change.
+      if ([...m.addedNodes].some((n) => n !== hostEl)) {
         relevant = true;
         break;
       }
@@ -1075,89 +1284,159 @@
       }, 650);
     }
   });
+  let observing = false;
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['src', 'srcset']
-  });
-
-  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      if (!msg || !msg.type) return false;
-
-      if (msg.type === 'PING') {
-        sendResponse({ ok: true });
-        return false;
-      }
-
-      if (msg.type === 'SCAN_PAGE') {
-        runFullScan().then((payload) => sendResponse(payload));
-        return true;
-      }
-
-      if (msg.type === 'GET_STATE') {
-        if (analyzedItems.length === 0) {
-          runFullScan().then((payload) => sendResponse(payload));
-          return true;
-        }
-        sendResponse(getSummaryPayload());
-        return false;
-      }
-
-      if (msg.type === 'UPDATE_SETTINGS') {
-        settings = { ...settings, ...(msg.settings || {}) };
-        chrome.storage?.local?.set?.({ iscProSettings: settings });
-        runFullScan().then((payload) => sendResponse(payload));
-        return true;
-      }
-
-      if (msg.type === 'TOGGLE_OVERLAY') {
-        settings.enabled = !settings.enabled;
-        chrome.storage?.local?.set?.({ iscProSettings: settings });
-        renderOverlays();
-        const issueCount = analyzedItems.filter((i) => i.severity !== 'ok').length;
-        chrome.runtime?.sendMessage?.({
-          type: 'UPDATE_BADGE',
-          issueCount,
-          totalCount: analyzedItems.length,
-          enabled: settings.enabled
-        });
-        sendResponse(getSummaryPayload());
-        return false;
-      }
-
-      if (msg.type === 'SCROLL_TO_IMAGE') {
-        const el = elementMap.get(msg.id);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-          highlightedItemId = msg.id;
-          pinnedItemId = msg.id;
-          renderOverlays();
-          setTimeout(() => {
-            if (highlightedItemId === msg.id) {
-              highlightedItemId = null;
-              renderOverlays();
-            }
-          }, 2600);
-          sendResponse({ ok: true });
-        } else {
-          sendResponse({ ok: false });
-        }
-        return false;
-      }
-
-      return false;
+  function startObserving() {
+    if (observing) return;
+    observing = true;
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'srcset']
     });
   }
 
-  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['iscProSettings'], (res) => {
-      if (res && res.iscProSettings) {
-        settings = { ...DEFAULT_SETTINGS, ...res.iscProSettings };
+  function applySettings(next) {
+    const before = settings;
+    settings = { ...DEFAULT_SETTINGS, ...next };
+    return SCAN_KEYS.some((k) => before[k] !== settings[k]);
+  }
+
+  function persistSettings() {
+    try {
+      chrome.storage?.local?.set?.({ iscProSettings: settings });
+    } catch (_) {}
+  }
+
+  function onMessage(msg, _sender, sendResponse) {
+    if (!msg || !msg.type) return false;
+
+    if (msg.type === 'PING') {
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    if (msg.type === 'SCAN_PAGE') {
+      runFullScan().then((payload) => sendResponse(payload));
+      return true;
+    }
+
+    if (msg.type === 'GET_STATE') {
+      if (!active || analyzedItems.length === 0) {
+        runFullScan().then((payload) => sendResponse(payload));
+        return true;
       }
-      runFullScan();
+      sendResponse(getSummaryPayload());
+      return false;
+    }
+
+    if (msg.type === 'UPDATE_SETTINGS') {
+      applySettings({ ...settings, ...(msg.settings || {}) });
+      persistSettings();
+      runFullScan().then((payload) => sendResponse(payload));
+      return true;
+    }
+
+    if (msg.type === 'TOGGLE_OVERLAY') {
+      if (!active) {
+        // First press on a page that has not been scanned yet shows the overlay.
+        settings.enabled = true;
+        persistSettings();
+        runFullScan().then((payload) => sendResponse(payload));
+        return true;
+      }
+      settings.enabled = !settings.enabled;
+      persistSettings();
+      renderOverlays();
+      updateBadge();
+      sendResponse(getSummaryPayload());
+      return false;
+    }
+
+    if (msg.type === 'SCROLL_TO_IMAGE') {
+      const el = elementMap.get(msg.id);
+      if (el && document.documentElement.contains(el)) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        highlightedItemId = msg.id;
+        pinnedItemId = msg.id;
+        tooltipItemId = null;
+        renderOverlays();
+        setTimeout(() => {
+          if (highlightedItemId === msg.id) {
+            highlightedItemId = null;
+            renderOverlays();
+          }
+        }, 2600);
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false });
+      }
+      return false;
+    }
+
+    // Reads page-owned blob: URLs (which the extension's service worker cannot) for compression.
+    if (msg.type === 'FETCH_BYTES_LOCAL') {
+      fetchBlobLocally(msg.url)
+        .then((blob) => blob.arrayBuffer())
+        .then((buf) => {
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          sendResponse({ ok: true, base64: btoa(binary) });
+        })
+        .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+      return true;
+    }
+
+    return false;
+  }
+
+  // Keeps every tab in sync when settings change in another tab or in the popup.
+  function onStorageChanged(changes, area) {
+    if (area !== 'local' || !changes.iscProSettings) return;
+    const next = changes.iscProSettings.newValue || {};
+    if (JSON.stringify({ ...DEFAULT_SETTINGS, ...next }) === JSON.stringify(settings)) return;
+    const needsRescan = applySettings(next);
+    if (!active) {
+      if (settings.autoScan) runFullScan();
+      return;
+    }
+    if (needsRescan) runFullScan();
+    else {
+      renderOverlays();
+      updateBadge();
+    }
+  }
+
+  document.addEventListener('mouseover', onMouseOver, { passive: true });
+  document.addEventListener('mouseout', onMouseOut, { passive: true });
+  window.addEventListener('scroll', scheduleOverlayPositionUpdate, { passive: true, capture: true });
+  window.addEventListener('resize', scheduleOverlayPositionUpdate, { passive: true });
+  if (runtimeAlive()) {
+    chrome.runtime.onMessage.addListener(onMessage);
+    chrome.storage?.onChanged?.addListener(onStorageChanged);
+  }
+
+  window.__ISC_PRO__ = {
+    alive: runtimeAlive,
+    destroy() {
+      observer.disconnect();
+      clearTimeout(scanTimer);
+      clearTimeout(hoverClearTimer);
+      document.removeEventListener('mouseover', onMouseOver);
+      document.removeEventListener('mouseout', onMouseOut);
+      window.removeEventListener('scroll', scheduleOverlayPositionUpdate, { capture: true });
+      window.removeEventListener('resize', scheduleOverlayPositionUpdate);
+      if (hostEl) hostEl.remove();
+      active = false;
+    }
+  };
+
+  if (runtimeAlive() && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['iscProSettings'], (res) => {
+      if (res && res.iscProSettings) applySettings(res.iscProSettings);
+      if (settings.autoScan && !active) runFullScan();
     });
   } else {
     runFullScan();

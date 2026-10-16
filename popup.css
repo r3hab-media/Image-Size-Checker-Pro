@@ -241,6 +241,19 @@ input:checked + .slider:before {
   color: #94a3b8;
 }
 
+.overwrite-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #cbd5e1;
+}
+
+.overwrite-row.hidden {
+  display: none;
+}
+
 .folder-btns {
   display: flex;
   gap: 5px;
@@ -377,6 +390,7 @@ input:checked + .slider:before {
 
 .settings-checks {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;

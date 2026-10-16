@@ -19,8 +19,10 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 
 // Routes registered by tests (e.g. fixture images with specific headers) take precedence over files.
 const routes = new Map();
+const requests = []; // every request, so tests can assert what the extension fetched
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
+  requests.push({ method: req.method, path: url.pathname, headers: req.headers });
   const route = routes.get(url.pathname);
   if (route) return route(req, res);
   const file = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -42,7 +44,7 @@ const browser = await puppeteer.launch({
   args: ['--no-first-run', '--no-default-browser-check']
 });
 const extId = await browser.installExtension(ROOT);
-const ctx = { browser, origin, extId, routes, root: ROOT };
+const ctx = { browser, origin, extId, routes, requests, root: ROOT };
 
 const filter = process.argv[2];
 const files = fs
