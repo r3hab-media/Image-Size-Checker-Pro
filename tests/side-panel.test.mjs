@@ -1,10 +1,10 @@
-// Side panel: opened from the toolbar, follows the active tab, and lays out at any panel width.
+// Toolbar popup (750px) and side panel (popup.html?panel=1): opening, tab following, and layout.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function panelPage(ctx, width = 750) {
   const panel = await ctx.browser.newPage();
   await panel.setViewport({ width, height: 700 });
-  await panel.goto(`chrome-extension://${ctx.extId}/popup.html`);
+  await panel.goto(`chrome-extension://${ctx.extId}/popup.html?panel=1`);
   return panel;
 }
 
@@ -20,7 +20,7 @@ async function waitForPanelUrl(panel, expected, timeout = 5000) {
 }
 
 export const tests = {
-  'toolbar button opens the side panel (no popup)': async (ctx) => {
+  'toolbar opens the 750px popup; the side panel is available separately': async (ctx) => {
     const page = await ctx.browser.newPage();
     await page.goto(`chrome-extension://${ctx.extId}/tests/blank.html`);
     // The service worker sets the behavior when it starts, which can be just after install.
@@ -28,15 +28,15 @@ export const tests = {
       let behavior;
       for (let i = 0; i < 30; i++) {
         behavior = await chrome.sidePanel.getPanelBehavior();
-        if (behavior.openPanelOnActionClick) break;
+        if (!behavior.openPanelOnActionClick) break;
         await new Promise((r) => setTimeout(r, 100));
       }
       return { behavior, options: await chrome.sidePanel.getOptions({}), popup: await chrome.action.getPopup({}) };
     });
     await page.close();
-    if (!res.behavior.openPanelOnActionClick) throw new Error('openPanelOnActionClick not set');
-    if (!res.options.path || !res.options.path.endsWith('popup.html')) throw new Error('panel path ' + res.options.path);
-    if (res.popup) throw new Error('action still has a popup: ' + res.popup);
+    if (res.behavior.openPanelOnActionClick) throw new Error('toolbar click should open the popup, not the panel');
+    if (!res.options.path || !res.options.path.endsWith('popup.html?panel=1')) throw new Error('panel path ' + res.options.path);
+    if (!res.popup.endsWith('/popup.html')) throw new Error('action popup ' + res.popup);
   },
 
   'panel follows tab switches and navigations': async (ctx) => {
@@ -63,6 +63,53 @@ export const tests = {
     await Promise.all([a.close(), b.close(), panel.close()]);
   },
 
+  'popup is 750px wide with options collapsed, and the image list is visible without scrolling': async (ctx) => {
+    const demo = await ctx.browser.newPage();
+    await demo.goto(`chrome-extension://${ctx.extId}/demo-playground.html`);
+    const tabId = await demo.evaluate(async () => (await chrome.tabs.getCurrent()).id);
+    const popup = await ctx.browser.newPage();
+    await popup.setViewport({ width: 750, height: 600 }); // Chrome's maximum popup height
+    await popup.goto(`chrome-extension://${ctx.extId}/popup.html`);
+    await popup.evaluate((id) => window.__iscPopup.ensureAndScan(true, id), tabId);
+    const view = await popup.evaluate(() => {
+      const list = document.getElementById('itemsList');
+      const firstCard = document.querySelector('.item-card').getBoundingClientRect();
+      return {
+        bodyWidth: document.body.getBoundingClientRect().width,
+        panelClass: document.documentElement.classList.contains('panel'),
+        optionsOpen: document.getElementById('outputOptions').open,
+        firstCardTop: firstCard.top,
+        listScrollsInside: list.scrollHeight > list.clientHeight + 1,
+        pageScrolls: document.documentElement.scrollHeight > window.innerHeight,
+        sidePanelBtnVisible: !document.getElementById('openPanelBtn').hidden
+      };
+    });
+    await Promise.all([demo.close(), popup.close()]);
+    if (view.bodyWidth !== 750 || view.panelClass) throw new Error('popup width ' + JSON.stringify(view));
+    if (view.optionsOpen) throw new Error('output options should start collapsed');
+    if (!(view.firstCardTop < 420)) throw new Error('first image card starts too low: ' + view.firstCardTop);
+    if (view.listScrollsInside || !view.pageScrolls) throw new Error('the page, not just the list, should scroll: ' + JSON.stringify(view));
+    if (!view.sidePanelBtnVisible) throw new Error('popup should offer the side panel button');
+  },
+
+  'stale-copy banner shows only when the content script version does not match': async (ctx) => {
+    const demo = await ctx.browser.newPage();
+    await demo.goto(`chrome-extension://${ctx.extId}/demo-playground.html`);
+    const tabId = await demo.evaluate(async () => (await chrome.tabs.getCurrent()).id);
+    const popup = await ctx.browser.newPage();
+    await popup.goto(`chrome-extension://${ctx.extId}/popup.html`);
+    const res = await popup.evaluate(async (id) => {
+      await window.__iscPopup.ensureAndScan(true, id);
+      const banner = document.getElementById('staleBanner');
+      const current = banner.classList.contains('hidden');
+      window.__iscPopup.showStaleBanner(true);
+      return { hiddenForCurrent: current, textWhenStale: banner.textContent };
+    }, tabId);
+    await Promise.all([demo.close(), popup.close()]);
+    if (!res.hiddenForCurrent) throw new Error('banner shown for an up-to-date content script');
+    if (!/chrome:\/\/extensions/.test(res.textWhenStale)) throw new Error('banner text: ' + res.textWhenStale);
+  },
+
   'layout has no horizontal overflow from 320px to 750px': async (ctx) => {
     const demo = await ctx.browser.newPage();
     await demo.goto(`chrome-extension://${ctx.extId}/demo-playground.html`);
@@ -83,3 +130,4 @@ export const tests = {
     await demo.close();
   }
 };
+

@@ -17,6 +17,7 @@
     </div>
     <div class="top-actions">
       <button id="openDemoBtn" class="icon-btn" title="Open Test Playground Page">Playground</button>
+      <button id="openPanelBtn" class="icon-btn" title="Dock in Chrome's side panel (stays open while you browse)">⇥ Side panel</button>
       <button id="rescanBtn" class="icon-btn primary" title="Re-scan Page">↻ Scan</button>
       <label class="toggle-switch" title="Enable/Disable On-Page Inspector (Alt+Shift+I)">
         <input type="checkbox" id="enabledToggle" checked />
@@ -24,6 +25,8 @@
       </label>
     </div>
   </header>
+
+  <div class="stale-banner hidden" id="staleBanner" role="alert"></div>
 
   <section class="kpi-grid">
     <div class="kpi-card">
@@ -63,15 +66,18 @@
         <button id="resetFolderBtn" class="icon-btn hidden" title="Switch back to Native Save-As prompt per download">Use Save-As</button>
       </div>
     </div>
-    <label class="overwrite-row hidden" id="overwriteRow">
-      <input type="checkbox" id="overwriteCheck" /> Overwrite files with the same name in this folder
-    </label>
-    <label class="overwrite-row" title="Adds a .webp version next to each compressed or resized PNG/JPEG (only when smaller), plus markup that serves it to browsers that support WebP">
-      <input type="checkbox" id="webpCheck" /> Also create WebP copies with <code>&lt;picture&gt;</code> markup
-    </label>
-    <label class="overwrite-row" title="Reduces PNGs to a 256-color palette with dithering, like TinyPNG. Kept only when smaller and visually close to the original; otherwise lossless compression is used.">
-      <input type="checkbox" id="lossyPngCheck" /> Allow lossy PNG (256 colors, only when visually near-identical)
-    </label>
+    <details class="output-options" id="outputOptions">
+      <summary>Output options <span id="outputOptionsSummary"></span></summary>
+      <label class="overwrite-row hidden" id="overwriteRow">
+        <input type="checkbox" id="overwriteCheck" /> Overwrite files with the same name in this folder
+      </label>
+      <label class="overwrite-row" title="Adds a .webp version next to each compressed or resized PNG/JPEG (only when smaller), plus markup that serves it to browsers that support WebP">
+        <input type="checkbox" id="webpCheck" /> Also create WebP copies with <code>&lt;picture&gt;</code> markup
+      </label>
+      <label class="overwrite-row" title="Reduces PNGs to a 256-color palette with dithering, like TinyPNG. Kept only when smaller and visually close to the original; otherwise lossless compression is used.">
+        <input type="checkbox" id="lossyPngCheck" /> Allow lossy PNG (256 colors, only when visually near-identical)
+      </label>
+    </details>
     <div class="batch-compress-row">
       <button id="compressAllZipBtn" class="compress-all-btn">
         🗜️ Compress &amp; Download All Compressible (<span id="tooLargeCountBadge">0</span>) to ZIP

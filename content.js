@@ -96,6 +96,8 @@
     return `${ratio.toFixed(2)}:1`;
   }
 
+  // Bumped when the scan payload changes, so the panel can tell when a tab runs an older copy.
+  const CONTENT_VERSION = 2;
   const COMPRESSIBLE_FORMATS = new Set(['PNG', 'JPEG', 'WEBP', 'SVG']);
   const WEIGHT_CODES = new Set(['FILE_OVER_CAP', 'FILE_OVER_RECOMMENDED', 'LEGACY_FORMAT']);
   const KNOWN_EXT = /\.(avif|webp|png|jpe?g|gif|svg|bmp|ico)$/i;
@@ -1237,6 +1239,7 @@
 
     return {
       ok: true,
+      contentVersion: CONTENT_VERSION,
       pageUrl: window.location.href,
       pageTitle: document.title || window.location.hostname,
       dpr: window.devicePixelRatio || 1,

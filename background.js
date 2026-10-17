@@ -232,8 +232,9 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// The toolbar button opens the side panel, which stays open while browsing (unlike a popup).
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// The toolbar button opens the 750px popup; the side panel is opened from its "Side panel" button.
+// This setting persists, so it must be switched back off for installs that had it on.
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 
 // ---------- background compression jobs (run in an offscreen document) ----------
 
