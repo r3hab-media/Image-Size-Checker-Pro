@@ -2,20 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Choose Target Folder — Image Size Checker Pro</title>
+  <title>Target Folder — Image Size Checker Pro</title>
   <link rel="stylesheet" href="popup.css" />
   <style>
     body { width: auto; padding: 24px; }
     .folder-page { display: flex; flex-direction: column; gap: 14px; max-width: 420px; }
     .folder-page p { margin: 0; line-height: 1.5; }
+    .folder-page .hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="folder-page">
+  <!-- Mode 1 (no query): choose a target folder. -->
+  <div class="folder-page" id="pickMode">
     <h1 class="brand-title">Choose a target folder</h1>
     <p>Compressed images will be saved straight into this folder (for example your site's <code>public/images</code>).</p>
     <button id="pickBtn" class="compress-all-btn">Choose Folder…</button>
     <p id="status" class="compression-status"></p>
+  </div>
+
+  <!-- Mode 2 (?grant=<job id>): re-allow writing to the chosen folder for a waiting job. -->
+  <div class="folder-page hidden" id="grantMode">
+    <h1 class="brand-title">Allow saving to <span id="grantFolderName">your folder</span></h1>
+    <p>Chrome needs your OK again before Image Size Checker Pro can save into this folder. Your image will be saved as soon as you allow it.</p>
+    <button id="allowBtn" class="compress-all-btn">Allow access</button>
+    <p id="grantStatus" class="compression-status"></p>
   </div>
   <script type="module" src="folder.js"></script>
 </body>

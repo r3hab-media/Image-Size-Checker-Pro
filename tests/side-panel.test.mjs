@@ -103,10 +103,16 @@ export const tests = {
       const banner = document.getElementById('staleBanner');
       const current = banner.classList.contains('hidden');
       window.__iscPopup.showStaleBanner(true);
-      return { hiddenForCurrent: current, textWhenStale: banner.textContent };
+      await new Promise((r) => setTimeout(r, 100));
+      return {
+        hiddenForCurrent: current,
+        textWhenStale: banner.textContent,
+        accessBannerHidden: document.getElementById('accessBanner').classList.contains('hidden')
+      };
     }, tabId);
     await Promise.all([demo.close(), popup.close()]);
     if (!res.hiddenForCurrent) throw new Error('banner shown for an up-to-date content script');
+    if (!res.accessBannerHidden) throw new Error('site-access banner shown although all sites are allowed');
     if (!/chrome:\/\/extensions/.test(res.textWhenStale)) throw new Error('banner text: ' + res.textWhenStale);
   },
 

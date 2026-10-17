@@ -1,6 +1,6 @@
 import { KEPT_NOTES, RESIZABLE_FORMATS, variantWidths } from './js/jobs.js';
 import { canPreview, openPreview } from './js/preview.js';
-import { getFolder, getWritableFolder, clearFolder } from './js/folder-store.js';
+import { getFolder, clearFolder } from './js/folder-store.js';
 
 // The side panel loads popup.html?panel=1; the toolbar popup is a fixed 750px wide.
 const IS_PANEL = new URLSearchParams(location.search).has('panel');
@@ -23,6 +23,8 @@ const els = {
   openDemoBtn: document.getElementById('openDemoBtn'),
   openPanelBtn: document.getElementById('openPanelBtn'),
   staleBanner: document.getElementById('staleBanner'),
+  accessBanner: document.getElementById('accessBanner'),
+  grantAccessBtn: document.getElementById('grantAccessBtn'),
   outputOptionsSummary: document.getElementById('outputOptionsSummary'),
   rescanBtn: document.getElementById('rescanBtn'),
   enabledToggle: document.getElementById('enabledToggle'),
@@ -86,18 +88,20 @@ function formatBytes(bytes) {
 
 const jobWaiters = new Map(); // job id -> resolve, for callers that await completion
 
-// Resolves the save destination at the start of a click (permission prompts need the user gesture).
+// No permission prompt here: Chrome's prompt would close this popup and kill the click. If the
+// folder grant has lapsed, the background job opens a small window to ask for it.
 async function resolveDestination() {
-  const folder = await getWritableFolder();
-  if (folder && folder.expired) {
-    els.compressionStatus.textContent = `Access to /${folder.name}/ expired — using Save-As. Choose the folder again to restore it.`;
-    return 'saveas';
-  }
-  return folder ? 'folder' : 'saveas';
+  return (await getFolder()) ? 'folder' : 'saveas';
 }
 
 // Hands a job to the service worker; it keeps running if this panel closes.
 async function startJob(mode, items, options = {}) {
+  const allowed = await withSiteAccess(items);
+  if (!allowed.length) {
+    els.compressionStatus.textContent = 'Error: this extension has no access to the site hosting that image — click "Allow on all sites" above.';
+    return null;
+  }
+  items = allowed;
   const destination = await resolveDestination();
   const job = {
     mode,
@@ -383,7 +387,7 @@ function zipCandidates() {
 }
 
 async function requestEstimates(tabId) {
-  const items = compressibleItems();
+  const items = await withSiteAccess(compressibleItems());
   if (!items.length) return;
   const resp = await new Promise((resolve) =>
     chrome.runtime.sendMessage(
@@ -897,3 +901,34 @@ function updateOptionsSummary() {
   els.outputOptionsSummary.textContent = on.length ? `· ${on.join(' · ')} on` : '';
 }
 for (const box of [els.webpCheck, els.lossyPngCheck, els.overwriteCheck]) box.addEventListener('change', updateOptionsSummary);
+
+// ---------- site access ----------
+// With Chrome's site access set to "on click" or "specific sites", host access for other sites
+// (CDNs, Google, …) is withheld and fetching their images fails with CORS errors. Detect that,
+// offer to grant it, and skip images we may not fetch instead of logging failed requests.
+const originAccess = new Map();
+function hasSiteAccess(url) {
+  if (!/^https?:/i.test(url)) return Promise.resolve(true); // data:, blob: and inline images
+  const origin = new URL(url).origin;
+  if (!originAccess.has(origin)) originAccess.set(origin, chrome.permissions.contains({ origins: [`${origin}/*`] }).catch(() => false));
+  return originAccess.get(origin);
+}
+
+async function withSiteAccess(items) {
+  const ok = await Promise.all(items.map((i) => hasSiteAccess(i.url)));
+  return items.filter((_, k) => ok[k]);
+}
+
+async function checkSiteAccess() {
+  const all = await chrome.permissions.contains({ origins: ['<all_urls>'] }).catch(() => true);
+  els.accessBanner.classList.toggle('hidden', all);
+}
+
+els.grantAccessBtn.addEventListener('click', async () => {
+  try {
+    await chrome.permissions.request({ origins: ['<all_urls>'] });
+  } catch (_) {}
+  originAccess.clear();
+  checkSiteAccess();
+});
+checkSiteAccess();

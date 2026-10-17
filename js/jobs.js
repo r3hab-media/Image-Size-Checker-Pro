@@ -2,7 +2,7 @@
 // closes. Offscreen documents only get chrome.runtime, so downloads and tab access go through
 // the service worker.
 import { makeZip } from './zip.js';
-import { getFolder } from './folder-store.js';
+import { getFolder, folderPermission } from './folder-store.js';
 
 export const KEPT_NOTES = new Set(['kept', 'kept-unsupported', 'kept-animated', 'kept-lossless', 'kept-color-profile']);
 
@@ -123,21 +123,54 @@ async function uniqueName(dir, name) {
   throw new Error('Too many files with the same name');
 }
 
-async function writableFolder() {
+const NO_ACCESS = 'Folder access was not granted, so nothing was saved. Choose the folder again, or switch to Save-As.';
+const ACCESS_TIMEOUT_MS = 3 * 60 * 1000;
+const accessWaiters = new Map(); // job id -> resolve(granted)
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === 'FOLDER_ACCESS_RESULT') {
+    const resolve = accessWaiters.get(msg.jobId);
+    if (resolve) {
+      accessWaiters.delete(msg.jobId);
+      resolve(Boolean(msg.granted));
+    }
+  }
+  return false;
+});
+
+// Chrome's folder grant lapses once no extension page is open. Re-granting needs Chrome's prompt,
+// which would close the toolbar popup, so the service worker opens a small window where the user
+// clicks "Allow", and the job waits for the answer.
+function askForFolderAccess(job) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      accessWaiters.delete(job.id);
+      resolve(false);
+    }, ACCESS_TIMEOUT_MS);
+    accessWaiters.set(job.id, (granted) => {
+      clearTimeout(timer);
+      resolve(granted);
+    });
+    sendRuntime({ type: 'NEED_FOLDER_ACCESS', jobId: job.id });
+  });
+}
+
+async function writableFolder(job) {
   const handle = await getFolder();
   if (!handle) return null;
-  try {
-    if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') return handle;
-  } catch (_) {}
-  return null;
+  if ((await folderPermission(handle)) === 'granted') return handle;
+  if (job.notify) job.notify({ status: `Waiting for access to /${handle.name}/ — click Allow in the window that opened…` });
+  const granted = await askForFolderAccess(job);
+  return granted && (await folderPermission(handle)) === 'granted' ? handle : null;
 }
 
 // destination 'folder' writes into the chosen folder; otherwise the Save-As dialog is used.
-async function save(bytes, filename, mimeType, { destination, overwrite }) {
+async function save(bytes, filename, mimeType, job) {
+  const { destination, overwrite } = job;
   const baseName = filename.split('/').pop() || filename;
   if (destination === 'folder') {
-    const dir = await writableFolder();
-    if (!dir) throw new Error('Lost access to the target folder — choose it again.');
+    const dir = await writableFolder(job);
+    if (!dir) throw new Error(NO_ACCESS);
     const name = overwrite ? baseName : await uniqueName(dir, baseName);
     const fileHandle = await dir.getFileHandle(name, { create: true });
     const writable = await fileHandle.createWritable();
@@ -294,8 +327,8 @@ async function writeToFolder(dir, name, data, mime, overwrite) {
 async function runResizeJob(job, update) {
   const seen = new Set();
   const candidates = job.items.filter((i) => !seen.has(i.url) && seen.add(i.url));
-  const folder = job.destination === 'folder' ? await writableFolder() : null;
-  if (job.destination === 'folder' && !folder) throw new Error('Lost access to the target folder — choose it again.');
+  const folder = job.destination === 'folder' ? await writableFolder(job) : null;
+  if (job.destination === 'folder' && !folder) throw new Error(NO_ACCESS);
 
   const results = {};
   const zipEntries = [];
@@ -385,6 +418,7 @@ export async function estimateItem(item, tabId, bytesPerPixel, lossyPng) {
 // Runs one job, reporting progress through update(partialState).
 // job: { id, mode: 'single' | 'zip', items, pageUrl, tabId, bytesPerPixel, destination, overwrite }
 export async function runJob(job, update) {
+  job.notify = update;
   const results = {}; // url -> per-image result shown in the panel
   const record = (item, r) => {
     results[item.url] = { beforeBytes: r.beforeBytes, afterBytes: r.afterBytes, savedPct: r.savedPct, note: r.note, reason: r.reason, width: r.width, height: r.height };
