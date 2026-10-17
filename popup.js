@@ -2,6 +2,12 @@ import { KEPT_NOTES, RESIZABLE_FORMATS, variantWidths } from './js/jobs.js';
 import { canPreview, openPreview } from './js/preview.js';
 import { getFolder, getWritableFolder, clearFolder } from './js/folder-store.js';
 
+// The side panel loads popup.html?panel=1; the toolbar popup is a fixed 750px wide.
+const IS_PANEL = new URLSearchParams(location.search).has('panel');
+if (IS_PANEL) document.documentElement.classList.add('panel');
+// Must match CONTENT_VERSION in content.js.
+const EXPECTED_CONTENT_VERSION = 2;
+
 let currentState = null;
 let activeFilter = 'all';
 let searchQuery = '';
@@ -15,6 +21,9 @@ const compressedResults = new Map(); // image URL -> { beforeBytes, afterBytes, 
 const els = {
   pageHostLabel: document.getElementById('pageHostLabel'),
   openDemoBtn: document.getElementById('openDemoBtn'),
+  openPanelBtn: document.getElementById('openPanelBtn'),
+  staleBanner: document.getElementById('staleBanner'),
+  outputOptionsSummary: document.getElementById('outputOptionsSummary'),
   rescanBtn: document.getElementById('rescanBtn'),
   enabledToggle: document.getElementById('enabledToggle'),
   kpiTotal: document.getElementById('kpiTotal'),
@@ -257,6 +266,7 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
   }
 
   currentState = state;
+  showStaleBanner(state.contentVersion !== EXPECTED_CONTENT_VERSION);
   renderDashboard();
   restoreJobState(tabId);
   requestEstimates(tabId);
@@ -665,6 +675,13 @@ els.compressAllZipBtn.addEventListener('click', () => {
 
 els.rescanBtn.addEventListener('click', () => ensureAndScan(true, activeTabId));
 
+els.openPanelBtn.hidden = IS_PANEL;
+els.openPanelBtn.addEventListener('click', async () => {
+  const win = await chrome.windows.getCurrent();
+  await chrome.sidePanel.open({ windowId: win.id });
+  window.close();
+});
+
 els.openDemoBtn.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('demo-playground.html') });
 });
@@ -830,6 +847,7 @@ chrome.storage.local.get(['iscProOverwrite', 'iscProWebp', 'iscProLossyPng'], (r
   els.webpCheck.checked = webpCopies;
   lossyPng = Boolean(res && res.iscProLossyPng);
   els.lossyPngCheck.checked = lossyPng;
+  updateOptionsSummary();
   renderDashboard();
 });
 refreshFolderLabel();
@@ -859,4 +877,23 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
 });
 
 // Exposed for the automated tests.
-window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTooLargeToZip, resizeAllOversized };
+window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTooLargeToZip, resizeAllOversized, showStaleBanner };
+
+// Chrome keeps running the content script (and service worker) the extension was loaded with until
+// it is reloaded, while the panel's own files are read fresh from disk. Say so instead of showing
+// wrong numbers.
+function showStaleBanner(stale) {
+  els.staleBanner.classList.toggle('hidden', !stale);
+  els.staleBanner.textContent = stale
+    ? 'This tab is running an older copy of the extension, so some numbers may be missing. Open chrome://extensions, click Reload on Image Size Checker Pro, then refresh this page.'
+    : '';
+}
+
+function updateOptionsSummary() {
+  const on = [];
+  if (webpCopies) on.push('WebP copies');
+  if (lossyPng) on.push('lossy PNG');
+  if (overwriteExisting && !els.overwriteRow.classList.contains('hidden')) on.push('overwrite');
+  els.outputOptionsSummary.textContent = on.length ? `· ${on.join(' · ')} on` : '';
+}
+for (const box of [els.webpCheck, els.lossyPngCheck, els.overwriteCheck]) box.addEventListener('change', updateOptionsSummary);

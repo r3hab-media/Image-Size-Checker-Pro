@@ -5,12 +5,11 @@
 }
 
 /* Fills the side panel, whose width the user controls; reflows below 600px. */
+/* Toolbar popup: fixed 750px. Side panel (html.panel): fills whatever width Chrome gives it.
+   The whole page scrolls (rather than only the image list), so the list gets the full height. */
 body {
-  width: 100%;
+  width: 750px;
   min-width: 320px;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
   background: #0f172a;
   color: #f1f5f9;
@@ -18,6 +17,9 @@ body {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -411,8 +413,6 @@ input:checked + .slider:before {
 
 /* Image List */
 .items-container {
-  flex: 1;
-  overflow-y: auto;
   padding: 8px 14px;
   display: flex;
   flex-direction: column;
@@ -607,6 +607,9 @@ input:checked + .slider:before {
 
 /* Footer */
 .footer-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -896,4 +899,41 @@ kbd {
   background: #38bdf8;
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
   pointer-events: none;
+}
+
+html.panel body {
+  width: 100%;
+}
+
+/* Output options, collapsed by default to keep the image list in view */
+.output-options {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #cbd5e1;
+}
+
+.output-options summary {
+  cursor: pointer;
+  user-select: none;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.output-options[open] summary {
+  margin-bottom: 4px;
+}
+
+.stale-banner {
+  margin: 8px 14px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.stale-banner.hidden {
+  display: none;
 }

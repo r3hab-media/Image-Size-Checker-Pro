@@ -12,9 +12,9 @@ For every `<img>`, CSS `background-image` and inline `<svg>` on the page:
 - Missing `alt` (an empty `alt=""` is treated as decorative and not flagged)
 - Missing `width`/`height` (layout-shift risk) and `loading="lazy"` above the fold (LCP risk)
 
-Results appear as badges on the page and in the side panel (click the toolbar button), with CSV, JSON and Markdown export. The side panel stays open while you browse and follows the active tab.
+Results appear as badges on the page and in the 750px popup (click the toolbar button), with CSV, JSON and Markdown export. Click **⇥ Side panel** to dock it in Chrome's side panel instead, where it stays open while you browse and follows the active tab.
 
-Pages are scanned when you open the side panel or press **Alt+Shift+I**. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
+Pages are scanned when you open the popup or side panel, or press **Alt+Shift+I**. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
 
 ## How compression works
 
@@ -64,7 +64,7 @@ CSS backgrounds get `image-set()` with `type()` entries. Even an already-optimal
 - **Default:** each save opens the native Save-As dialog.
 - **Choose Folder…** opens a small window where you pick a folder on disk (for example your site's `public/images/`). The folder is remembered until you click **Use Save-As**. If Chrome's access to the folder lapses, you are asked again or the extension falls back to Save-As.
 - Existing files are not overwritten unless you tick **Overwrite files with the same name** (otherwise a copy such as `hero (1).png` is written).
-- Compression runs in the background, so you can close the side panel or switch tabs while a batch runs; reopen the panel on that tab to see the result.
+- Compression runs in the background, so you can close the popup or side panel, or switch tabs, while a batch runs; reopen it on that tab to see the result.
 - **Compress & Download All Compressible to ZIP** bundles every compressible image that the test run showed can shrink. Images that fail to download are listed in the status line; the rest of the batch still completes.
 
 ## Load locally in Chrome
