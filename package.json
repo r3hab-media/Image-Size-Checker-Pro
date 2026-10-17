@@ -1,6 +1,6 @@
 {
   "name": "image-size-checker-pro",
-  "version": "3.2.0",
+  "version": "3.4.0",
   "private": true,
   "type": "module",
   "description": "Chrome extension that audits page images and compresses them as drop-in replacements",
@@ -10,7 +10,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "package": "node scripts/package.mjs"
   },
   "devDependencies": {
     "puppeteer-core": "^24.43.1"
