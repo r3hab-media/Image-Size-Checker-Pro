@@ -93,6 +93,12 @@ async function fetchImageMeta(url) {
   }
   if (url.startsWith('data:')) return dataUriMeta(url);
   if (metaCache.has(url)) return metaCache.get(url);
+  // Without host access (site access "on click" or "specific sites"), the fetch would only fail
+  // with a CORS error, so don't make it.
+  const origin = new URL(url).origin;
+  if (!(await chrome.permissions.contains({ origins: [`${origin}/*`] }).catch(() => false))) {
+    return { ok: false, fileSize: 0, mimeType: inferMimeFromUrl(url), error: 'no-site-access' };
+  }
 
   // Anonymous first (cache-friendly); retry with cookies for images that need a session.
   for (const credentials of ['omit', 'include']) {
@@ -388,4 +394,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   return false;
+});
+
+// ---------- folder access window (Chrome's permission prompt can't run in the toolbar popup) ----------
+
+const accessWindows = new Map(); // window id -> job id
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (!message || !message.type) return false;
+  if (message.type === 'NEED_FOLDER_ACCESS') {
+    chrome.windows
+      .create({ url: chrome.runtime.getURL(`folder.html?grant=${encodeURIComponent(message.jobId)}`), type: 'popup', width: 480, height: 280, focused: true })
+      .then((win) => accessWindows.set(win.id, message.jobId))
+      .catch(() => {
+        chrome.runtime.sendMessage({ type: 'FOLDER_ACCESS_RESULT', jobId: message.jobId, granted: false }, () => void chrome.runtime.lastError);
+      });
+  }
+  if (message.type === 'FOLDER_ACCESS_RESULT') {
+    for (const [winId, jobId] of accessWindows) if (jobId === message.jobId) accessWindows.delete(winId);
+  }
+  return false;
+});
+
+// Closing the window without answering counts as "not granted", so the job never waits forever.
+chrome.windows.onRemoved.addListener((winId) => {
+  const jobId = accessWindows.get(winId);
+  if (jobId === undefined) return;
+  accessWindows.delete(winId);
+  chrome.runtime.sendMessage({ type: 'FOLDER_ACCESS_RESULT', jobId, granted: false }, () => void chrome.runtime.lastError);
 });

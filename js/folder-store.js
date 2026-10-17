@@ -31,15 +31,37 @@ export const getFolder = () => tx('readonly', (s) => s.get(KEY)).catch(() => nul
 export const setFolder = (handle) => tx('readwrite', (s) => s.put(handle, KEY));
 export const clearFolder = () => tx('readwrite', (s) => s.delete(KEY));
 
-// Returns the folder only if we may write to it, asking the user when the grant has lapsed.
-// Must be called at the start of a click handler: requestPermission needs a recent user gesture.
-export async function getWritableFolder() {
-  const handle = await getFolder();
-  if (!handle) return null;
-  const opts = { mode: 'readwrite' };
+const RW = { mode: 'readwrite' };
+const SIMULATED_KEY = 'simulatedPermission';
+
+// Test hook: real folder permissions can only be granted through Chrome's own prompt, which
+// automated tests cannot click. When this IndexedDB key is set ('prompt' | 'granted' | 'denied'),
+// permission checks and requests use it instead of the handle.
+export const setSimulatedPermission = (state) =>
+  tx('readwrite', (s) => (state ? s.put(state, SIMULATED_KEY) : s.delete(SIMULATED_KEY)));
+const simulated = () => tx('readonly', (s) => s.get(SIMULATED_KEY)).catch(() => undefined);
+
+export async function folderPermission(handle) {
+  const sim = await simulated();
+  if (sim) return sim;
   try {
-    if ((await handle.queryPermission(opts)) === 'granted') return handle;
-    if ((await handle.requestPermission(opts)) === 'granted') return handle;
-  } catch (_) {}
-  return { expired: true, name: handle.name };
+    return await handle.queryPermission(RW);
+  } catch (_) {
+    return 'denied';
+  }
+}
+
+// Shows Chrome's permission prompt; needs a user gesture in a page that stays open.
+export async function requestFolderPermission(handle) {
+  const sim = await simulated();
+  if (sim) {
+    const next = sim === 'denied' ? 'denied' : 'granted';
+    await setSimulatedPermission(next);
+    return next;
+  }
+  try {
+    return await handle.requestPermission(RW);
+  } catch (_) {
+    return 'denied';
+  }
 }
