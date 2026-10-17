@@ -36,7 +36,7 @@ After each scan, the compressible images are test-compressed in the background (
 
 ## Resizing for display
 
-Compression keeps pixel dimensions. For images whose pixels are larger than they are displayed ("oversized px"), **📐 Resize** (per image) or **Resize All Oversized** creates versions at 1x and 2x the displayed width, in the original format, named `name-<width>w.ext` (for example `logo-44w.png` and `logo-88w.png`). Images are never upscaled; if 2x would be at least the original size, the original file is used for 2x.
+Compression keeps pixel dimensions. For images whose pixels are larger than they are displayed ("oversized px"), **Resize** (per image) or **Resize All Oversized** creates versions at 1x and 2x the displayed width, in the original format, named `name-<width>w.ext` (for example `logo-44w.png` and `logo-88w.png`). Images are never upscaled; if 2x would be at least the original size, the original file is used for 2x.
 
 Each resize comes with a snippet to paste into your page, using the image's path on your site:
 
@@ -83,3 +83,7 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 - Images inside iframes are not scanned.
 - Inline SVGs are saved as their markup only; styles applied by the page's CSS are not included.
+
+## Credits
+
+The popup uses [Rubik](https://github.com/googlefonts/rubik) and [Space Mono](https://github.com/googlefonts/spacemono), bundled in `fonts/` under the SIL Open Font License 1.1 (see `fonts/*-OFL.txt`).
