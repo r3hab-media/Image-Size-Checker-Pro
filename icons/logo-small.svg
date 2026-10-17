@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <title>Image Size Checker Pro</title>
+  <!-- Simplified mark for 16px and 32px: no tilt, no shadow, just the squeeze arrows -->
+  <rect x="0.75" y="0.75" width="14.5" height="14.5" rx="3.5" fill="#FFD43B" stroke="#111111" stroke-width="1.5"/>
+  <g fill="none" stroke="#111111" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M3.8 3.8 L6.6 6.6 M6.6 4.2 V6.6 H4.2"/>
+    <path d="M12.2 12.2 L9.4 9.4 M9.4 11.8 V9.4 H11.8"/>
+  </g>
+</svg>
