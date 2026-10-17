@@ -425,7 +425,7 @@ function estimateHtml(item) {
     return `<div class="estimate-pill">💡 Compression can save ${formatBytes(e.beforeBytes - e.afterBytes)} (-${e.savedPct}%)</div>`;
   }
   if (item.needsResize && !item.needsCompression) {
-    return `<div class="estimate-pill">ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed)${isResizable(item) ? ' — use 📐 Resize.' : '.'}</div>`;
+    return `<div class="estimate-pill">ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed)${isResizable(item) ? ' — use Resize.' : '.'}</div>`;
   }
   return '';
 }
@@ -537,15 +537,15 @@ function renderDashboard() {
               item.id
             )}" title="Compress &amp; save ${escapeHtml(
         item.originalFilename
-      )} keeping original dimensions &amp; format">🗜️ Compress</button>
+      )} keeping original dimensions &amp; format">Compress</button>
             ${
               isResizable(item)
-                ? `<button class="mini-btn resize-btn" data-act="resize" data-id="${escapeHtml(item.id)}" title="Create ${variantWidths(item).map((w) => w + 'px').join(' and ')} wide versions plus a srcset snippet">📐 Resize</button>`
+                ? `<button class="mini-btn resize-btn" data-act="resize" data-id="${escapeHtml(item.id)}" title="Create ${variantWidths(item).map((w) => w + 'px').join(' and ')} wide versions plus a srcset snippet">Resize</button>`
                 : ''
             }
             ${
               canPreview(item)
-                ? `<button class="mini-btn" data-act="preview" data-id="${escapeHtml(item.id)}" title="Compare original and compressed side by side and pick the quality">🔍 Preview</button>`
+                ? `<button class="mini-btn" data-act="preview" data-id="${escapeHtml(item.id)}" title="Compare original and compressed side by side and pick the quality">Preview</button>`
                 : ''
             }
             <button class="mini-btn" data-act="locate" data-id="${escapeHtml(
@@ -582,14 +582,14 @@ async function onItemAction(btn) {
     btn.disabled = true;
     btn.textContent = 'Working…';
     const job = await startJob('single', [targetItem]);
-    if (!job || job.state === 'error') flash(btn, 'Error', '🗜️ Compress', 1500);
+    if (!job || job.state === 'error') flash(btn, 'Error', 'Compress', 1500);
   } else if (act === 'resize' && currentState) {
     const targetItem = currentState.items.find((x) => x.id === id);
     if (!targetItem) return;
     btn.disabled = true;
     btn.textContent = 'Working…';
     const job = await startJob('resize', [targetItem]);
-    if (!job || job.state === 'error') flash(btn, 'Error', '📐 Resize', 1500);
+    if (!job || job.state === 'error') flash(btn, 'Error', 'Resize', 1500);
   } else if (act === 'preview' && currentState) {
     const targetItem = currentState.items.find((x) => x.id === id);
     if (!targetItem) return;
