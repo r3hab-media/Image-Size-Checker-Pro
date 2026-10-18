@@ -63,7 +63,7 @@ Optional keyboard shortcuts: pick your own keys to open the extension or show an
 | Store icon (128×128) | `icons/icon128.png` |
 | Screenshots (1280×800) | `store/screenshot-1-report.png`, `store/screenshot-2-preview.png`, `store/screenshot-3-page.png` |
 | Small promo tile (440×280) | `store/promo-small-440x280.png` |
-| Marquee promo tile (1400×560) | Optional; only used if Google features the extension |
+| Marquee promo tile (1400×560) | `store/promo-marquee-1400x560.png` (optional; only used if Google features the extension) |
 
 **Additional fields:**
 - Homepage URL: https://github.com/r3hab-media/Image-Size-Checker-Pro
