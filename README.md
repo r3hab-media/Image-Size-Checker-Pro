@@ -79,6 +79,12 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 `npm install` then `npm test` runs the test suite in your installed Chrome (set `CHROME_PATH` if it is not in the default location; `HEADFUL=1` shows the browser). The tests load the unpacked extension and cover the compression engine (including pixel-exact PNG checks against Chrome's own decoder), scanning, the overlay, settings, and batch ZIP export.
 
+`npm run package` builds the Chrome Web Store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. `node scripts/store-assets.mjs` regenerates the store screenshots and promo tile in `store/`. The listing text, permission justifications and submission checklist are in [store/LISTING.md](store/LISTING.md).
+
+## Privacy
+
+The extension has no servers, accounts, analytics or tracking. See [PRIVACY.md](PRIVACY.md).
+
 ## Known limitations
 
 - Images inside iframes are not scanned.
