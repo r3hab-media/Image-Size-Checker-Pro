@@ -137,5 +137,23 @@ await compose(
    </div>`
 );
 
+// Marquee: only shown if Google features the extension. The popup is scaled to about 75% so it fits the 560px height.
+await compose(
+  'promo-marquee-1400x560.png',
+  1400,
+  560,
+  `<div style="width:1400px;height:560px;display:flex;align-items:center;gap:40px;padding:0 70px 0 90px;background:#ffd43b;border:5px solid #111;overflow:hidden">
+     <div style="flex:1;min-width:0">
+       <div style="display:flex;align-items:center;gap:16px;margin-bottom:26px">
+         <img src="${fileUrl('icons/logo.svg')}" style="width:96px;height:96px;margin-left:-10px">
+         <div style="font-size:32px;font-weight:800;letter-spacing:-0.02em">Image Size Checker <span style="display:inline-block;font-size:16px;padding:2px 10px;border:3px solid #111;border-radius:999px;background:#ff6fae;transform:rotate(4deg);vertical-align:middle">PRO</span></div>
+       </div>
+       <h1 style="font-size:52px">Find heavy images.<br>Shrink them in one click.</h1>
+       <p style="color:#111;font-size:22px">Same filename, same format, same dimensions. No accounts, no tracking.</p>
+     </div>
+     <div class="sticker" style="width:560px;height:448px;flex-shrink:0;transform:rotate(2deg);background:#fff"><img src="${b64(report)}" style="display:block;width:560px;height:448px"></div>
+   </div>`
+);
+
 for (const f of [report, preview, pageShot]) fs.unlinkSync(f);
 await browser.close();
