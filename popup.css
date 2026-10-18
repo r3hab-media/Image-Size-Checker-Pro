@@ -854,8 +854,52 @@ input[type="checkbox"] {
 }
 
 .shortcut-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.shortcut-btn {
+  height: 24px;
+  padding: 0 10px;
+  border: var(--line);
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.shortcut-btn:hover {
+  transform: translate(-1px, -1px);
+}
+
+.shortcut-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+/* Once a shortcut is set, "Change" is a quiet text link next to the key. */
+.shortcut-btn.is-link {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--blue);
+  text-decoration: underline;
+  transform: none;
+}
+
+.privacy-link {
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 kbd {

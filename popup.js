@@ -932,3 +932,33 @@ els.grantAccessBtn.addEventListener('click', async () => {
   checkSiteAccess();
 });
 checkSiteAccess();
+
+// ---------- keyboard shortcuts ----------
+// The extension ships with no default keys (a default can silently override a website's own
+// shortcut, or lose to another extension). Show whatever the user assigned on Chrome's shortcuts
+// page, which is the only place keys can be set.
+const SHORTCUTS_PAGE = 'chrome://extensions/shortcuts';
+const shortcutEls = {
+  set: document.getElementById('shortcutSet'),
+  key: document.getElementById('shortcutKey'),
+  btn: document.getElementById('shortcutBtn'),
+  toggleLabel: document.getElementById('enabledToggleLabel')
+};
+
+async function renderShortcuts() {
+  const commands = await chrome.commands.getAll().catch(() => []);
+  const keyFor = (name) => commands.find((c) => c.name === name)?.shortcut || '';
+  const open = keyFor('_execute_action');
+  shortcutEls.set.classList.toggle('hidden', !open);
+  shortcutEls.key.textContent = open;
+  shortcutEls.btn.textContent = open ? 'Change' : 'Set a shortcut';
+  shortcutEls.btn.classList.toggle('is-link', Boolean(open));
+  const toggle = keyFor('toggle-inspector');
+  shortcutEls.toggleLabel.title = 'Show or hide the on-page image badges' + (toggle ? ` (${toggle})` : '');
+}
+
+shortcutEls.btn.addEventListener('click', () => chrome.tabs.create({ url: SHORTCUTS_PAGE }));
+// Chrome has no event for shortcut changes; the side panel stays open, so re-read on return.
+window.addEventListener('focus', renderShortcuts);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && renderShortcuts());
+renderShortcuts();

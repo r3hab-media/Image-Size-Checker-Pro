@@ -29,7 +29,7 @@
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
         Scan
       </button>
-      <label class="toggle-switch" title="Enable/Disable On-Page Inspector (Alt+Shift+I)">
+      <label class="toggle-switch" id="enabledToggleLabel" title="Show or hide the on-page image badges">
         <input type="checkbox" id="enabledToggle" checked aria-label="On-page inspector" />
         <span class="slider"></span>
       </label>
@@ -156,6 +156,7 @@
       <label><input type="checkbox" id="scanBgCheck" checked /> Scan CSS <code>background-image</code></label>
       <label><input type="checkbox" id="scanSvgCheck" checked /> Scan inline <code>&lt;svg&gt;</code></label>
       <label title="Off: pages are only scanned when you open this popup or press the shortcut, so the extension does not re-download every image on every site you visit."><input type="checkbox" id="autoScanCheck" /> Auto-scan every page I visit</label>
+      <a class="privacy-link" href="https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a>
       <button id="saveSettingsBtn" class="apply-btn">Apply &amp; Re-Scan</button>
     </div>
   </section>
@@ -165,7 +166,11 @@
   </main>
 
   <footer class="footer-bar">
-    <span class="shortcut-hint">Shortcut: <kbd>Alt+Shift+I</kbd></span>
+    <!-- Filled from chrome.commands: the user picks the key on chrome://extensions/shortcuts. -->
+    <span class="shortcut-hint">
+      <span id="shortcutSet" class="hidden">Shortcut: <kbd id="shortcutKey"></kbd></span>
+      <button id="shortcutBtn" class="shortcut-btn" title="Choose a keyboard shortcut on Chrome's shortcuts page">Set a shortcut</button>
+    </span>
     <div class="export-btns">
       <button id="copyMdBtn" class="footer-btn" title="Copy Markdown table for GitHub/Jira">Copy Markdown</button>
       <button id="exportCsvBtn" class="footer-btn" title="Download CSV Report">Export CSV</button>
