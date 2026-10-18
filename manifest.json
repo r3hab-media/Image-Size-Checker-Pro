@@ -44,12 +44,11 @@
     }
   ],
   "commands": {
+    "_execute_action": {
+      "description": "Open Image Size Checker Pro"
+    },
     "toggle-inspector": {
-      "suggested_key": {
-        "default": "Alt+Shift+I",
-        "mac": "Alt+Shift+I"
-      },
-      "description": "Toggle on-page image inspector overlay"
+      "description": "Show or hide the on-page image badges"
     }
   },
   "side_panel": {

@@ -53,7 +53,7 @@ OPTIONAL EXTRAS
 PRIVATE BY DESIGN
 No accounts, no analytics, no tracking. Pages are scanned only when you ask (unless you turn on auto-scan), all processing happens in your browser, and files are saved only to your computer.
 
-Keyboard shortcut: Alt+Shift+I toggles the on-page inspector.
+Optional keyboard shortcuts: pick your own keys to open the extension or show and hide the on-page badges.
 ```
 
 **Images:**

@@ -12,9 +12,13 @@ For every `<img>`, CSS `background-image` and inline `<svg>` on the page:
 - Missing `alt` (an empty `alt=""` is treated as decorative and not flagged)
 - Missing `width`/`height` (layout-shift risk) and `loading="lazy"` above the fold (LCP risk)
 
-Results appear as badges on the page and in the 750px popup (click the toolbar button), with CSV, JSON and Markdown export. Click **⇥ Side panel** to dock it in Chrome's side panel instead, where it stays open while you browse and follows the active tab.
+Results appear as badges on the page and in the 750px popup (click the toolbar button), with CSV, JSON and Markdown export. Click the **side panel** button (next to Playground) to dock it in Chrome's side panel instead, where it stays open while you browse and follows the active tab.
 
-Pages are scanned when you open the popup or side panel, or press **Alt+Shift+I**. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
+Pages are scanned when you open the popup or side panel, or press the badge shortcut. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
+
+## Keyboard shortcuts
+
+The extension ships with no default keys, because a default can override a website's own shortcut or clash with another extension. Click **Set a shortcut** in the popup footer (or open `chrome://extensions/shortcuts`) to assign keys to **Open Image Size Checker Pro** and **Show or hide the on-page image badges**. The footer then shows the key you chose.
 
 ## How compression works
 
