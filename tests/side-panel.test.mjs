@@ -107,13 +107,15 @@ export const tests = {
       return {
         hiddenForCurrent: current,
         textWhenStale: banner.textContent,
-        accessBannerHidden: document.getElementById('accessBanner').classList.contains('hidden')
+        accessBannerHidden: document.getElementById('accessBanner').classList.contains('hidden'),
+        scheme: navigator.userAgentData.brands.some((b) => b.brand === 'Microsoft Edge') ? 'edge' : 'chrome'
       };
     }, tabId);
     await Promise.all([demo.close(), popup.close()]);
     if (!res.hiddenForCurrent) throw new Error('banner shown for an up-to-date content script');
     if (!res.accessBannerHidden) throw new Error('site-access banner shown although all sites are allowed');
-    if (!/chrome:\/\/extensions/.test(res.textWhenStale)) throw new Error('banner text: ' + res.textWhenStale);
+    // Names the extensions page of the browser it is running in (Chrome or Edge).
+    if (!res.textWhenStale.includes(`Open ${res.scheme}://extensions`)) throw new Error('banner text: ' + res.textWhenStale);
   },
 
   'layout has no horizontal overflow from 320px to 750px': async (ctx) => {

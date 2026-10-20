@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Image Size Checker Pro",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "Find heavy, oversized and distorted images on any page, then compress or resize them as drop-in replacements with the same filename.",
   "permissions": [
     "scripting",

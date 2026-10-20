@@ -1,4 +1,5 @@
-// Generates the Chrome Web Store images in store/: 1280x800 screenshots and the 440x280 promo tile.
+// Generates the store images in store/: 1280x800 screenshots, the 440x280 and 1400x560 promo tiles,
+// and the 300x300 logo that Edge Add-ons asks for (Chrome uses icons/icon128.png).
 // It loads the unpacked extension in Chrome, captures the real popup on the built-in playground,
 // and frames each capture with a caption. Set CHROME_PATH if Chrome is not in the default location.
 import puppeteer from 'puppeteer-core';
@@ -81,12 +82,12 @@ const BASE = `${FONTS}
   p{font-size:21px;line-height:1.45;color:#3d3d52;margin-top:18px}
   .tag{display:inline-block;padding:4px 14px;border:3px solid #111;border-radius:999px;font-weight:800;font-size:16px;margin-bottom:20px}`;
 
-async function compose(name, width, height, html) {
+async function compose(name, width, height, html, { transparent = false } = {}) {
   await stage.setViewport({ width, height, deviceScaleFactor: 1 });
   await stage.setContent(`<style>${BASE}</style>${html}`);
   await stage.evaluate(() => document.fonts.ready);
   await sleep(200);
-  await stage.screenshot({ path: path.join(OUT, name) });
+  await stage.screenshot({ path: path.join(OUT, name), omitBackground: transparent });
   console.log('store/' + name);
 }
 
@@ -153,6 +154,15 @@ await compose(
      </div>
      <div class="sticker" style="width:560px;height:448px;flex-shrink:0;transform:rotate(2deg);background:#fff"><img src="${b64(report)}" style="display:block;width:560px;height:448px"></div>
    </div>`
+);
+
+// Edge Add-ons store logo: 1:1, 300x300 recommended. The icon on a transparent background.
+await compose(
+  'logo-300x300.png',
+  300,
+  300,
+  `<style>body{background:transparent}</style><img src="${fileUrl('icons/logo.svg')}" style="display:block;width:300px;height:300px">`,
+  { transparent: true }
 );
 
 for (const f of [report, preview, pageShot]) fs.unlinkSync(f);

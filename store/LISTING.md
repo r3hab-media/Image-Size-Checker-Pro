@@ -1,6 +1,6 @@
-# Chrome Web Store submission kit
+# Store submission kit
 
-Everything needed to fill in the Chrome Web Store developer dashboard for version 3.4.0. Copy each block into the matching field.
+Everything needed to fill in the Chrome Web Store developer dashboard for version 3.4.1. Copy each block into the matching field. The same ZIP and most of the same text go to Microsoft Edge Add-ons; [section 6](#6-microsoft-edge-add-ons) covers what differs there.
 
 ## 1. Build the upload
 
@@ -8,7 +8,7 @@ Everything needed to fill in the Chrome Web Store developer dashboard for versio
 npm run package
 ```
 
-This writes `dist/image-size-checker-pro-3.4.0.zip`. It refuses to build if packaged files have uncommitted changes, if the manifest and `package.json` versions differ, or if the description is over 132 characters. Upload that ZIP under **Package**.
+This writes `dist/image-size-checker-pro-3.4.1.zip`. It refuses to build if packaged files have uncommitted changes, if the manifest and `package.json` versions differ, or if the description is over 132 characters. Upload that ZIP under **Package**.
 
 To refresh the store images after UI changes: `node scripts/store-assets.mjs`.
 
@@ -85,7 +85,7 @@ Audit the images on the current web page for file size, dimensions, aspect ratio
 | `scripting` | Injects the extension's own image scanner into the active tab when the user opens the popup, so pages loaded before the extension was installed or updated can be scanned without a reload. |
 | `storage` | Saves the user's settings (size limit, overlay mode, thresholds) locally, and caches measured savings for the current browser session so they are not recalculated. |
 | `downloads` | Saves the compressed and resized images, ZIP files and CSV/JSON reports the user asks for to the user's computer. |
-| `sidePanel` | Lets the user open the same report in Chrome's side panel so it stays visible while browsing. |
+| `sidePanel` | Lets the user open the same report in the browser's side panel so it stays visible while browsing. |
 | `offscreen` | Image compression runs in an offscreen document so a batch job keeps running if the user closes the popup. |
 | Remote code | Answer **No, I am not using remote code.** All JavaScript, fonts and images ship inside the package. |
 
@@ -118,3 +118,43 @@ https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md
 
 - Watch installs, weekly users and uninstalls under the item's **Analytics** tab.
 - For each update: bump `version` in `manifest.json` and `package.json` (the store rejects a version it has already seen), run `npm test`, `npm run package`, and upload the new ZIP on the **Package** tab.
+- Upload the same ZIP to Edge Add-ons too, so both stores carry the same version.
+
+## 6. Microsoft Edge Add-ons
+
+Edge takes the same ZIP as Chrome; there is no separate Edge build. Submit at https://partner.microsoft.com/dashboard/microsoftedge (register once as an Edge developer; it is free). The listing has these parts:
+
+**Packages:** upload `dist/image-size-checker-pro-3.4.1.zip`.
+
+**Availability:** Public; all markets.
+
+**Properties:**
+- Category: Developer tools
+- Privacy policy: the extension does not collect personal information, but give the URL anyway: https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md
+- Website: https://github.com/r3hab-media/Image-Size-Checker-Pro
+- Support contact: https://github.com/r3hab-media/Image-Size-Checker-Pro/issues
+- Mature content: No
+
+**Store listings (English):**
+
+| Field | What to use |
+|---|---|
+| Description (250–10,000 characters) | The same description as in section 2 |
+| Extension logo (1:1, 300×300 recommended) | `store/logo-300x300.png` |
+| Small promotional tile (440×280) | `store/promo-small-440x280.png` |
+| Large promotional tile (1400×560) | `store/promo-marquee-1400x560.png` |
+| Screenshots (1280×800) | The same three screenshots as in section 2 |
+| Search terms (up to 7, 30 characters each, 21 words total) | `image optimizer`, `compress images`, `image size`, `page speed`, `resize images`, `webp`, `seo audit` |
+
+**Notes for certification** (on the Submit page):
+
+```
+No account or sign-in is needed. To test: open any web page with images (or click "Playground" in the popup for a built-in test page), click the toolbar button, and the popup lists every image with its file size and dimensions. Click "Compress" on an image to save a smaller copy with the same filename, or "Compress & Download All Compressible to ZIP" for a batch. "Resize" appears on images larger than their display size. The side panel button docks the same report in the Edge sidebar.
+
+The extension needs access to all sites because it audits whichever page the user chooses, and those images are often hosted on other domains (CDNs). Pages are scanned only when the user opens the extension or presses its shortcut, unless they turn on auto-scan. Nothing is sent anywhere; all processing happens locally.
+```
+
+**Before you press Publish:**
+- [ ] `npm test` also passes in Edge: `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm test`
+- [ ] Loaded the ZIP contents unpacked in Edge once and clicked through: scan, compress, ZIP, resize, preview, side panel
+- [ ] Expect certification to take up to about a week

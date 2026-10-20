@@ -5,6 +5,13 @@ import { getFolder, clearFolder } from './js/folder-store.js';
 // The side panel loads popup.html?panel=1; the toolbar popup is a fixed 750px wide.
 const IS_PANEL = new URLSearchParams(location.search).has('panel');
 if (IS_PANEL) document.documentElement.classList.add('panel');
+// The same package ships to Chrome and Edge; name the right browser where the user has to find one of
+// its pages. Edge redirects chrome:// links, but its users know them as edge://.
+const IS_EDGE =
+  navigator.userAgentData?.brands?.some((b) => b.brand === 'Microsoft Edge') ?? /\bEdg\//.test(navigator.userAgent);
+const BROWSER_NAME = IS_EDGE ? 'Edge' : 'Chrome';
+const BROWSER_SCHEME = IS_EDGE ? 'edge' : 'chrome';
+const STORE_NAME = IS_EDGE ? 'Edge Add-ons' : 'Chrome Web Store';
 // Must match CONTENT_VERSION in content.js.
 const EXPECTED_CONTENT_VERSION = 2;
 
@@ -255,7 +262,7 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
     els.pageHostLabel.textContent = 'Restricted browser page';
     els.itemsList.innerHTML = `
       <div class="empty-state">
-        Chrome blocks extensions from running on internal <code>chrome://</code> or Web Store pages.
+        ${BROWSER_NAME} blocks extensions from running on internal <code>${BROWSER_SCHEME}://</code> or ${STORE_NAME} pages.
         For local <code>file://</code> pages, enable “Allow access to file URLs” on the extension’s details page.<br/><br/>
         Click <strong>Playground</strong> above to open the built-in test page and try 1-click and ZIP image compression!
       </div>`;
@@ -889,7 +896,7 @@ window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTo
 function showStaleBanner(stale) {
   els.staleBanner.classList.toggle('hidden', !stale);
   els.staleBanner.textContent = stale
-    ? 'This tab is running an older copy of the extension, so some numbers may be missing. Open chrome://extensions, click Reload on Image Size Checker Pro, then refresh this page.'
+    ? `This tab is running an older copy of the extension, so some numbers may be missing. Open ${BROWSER_SCHEME}://extensions, click Reload on Image Size Checker Pro, then refresh this page.`
     : '';
 }
 
@@ -935,9 +942,9 @@ checkSiteAccess();
 
 // ---------- keyboard shortcuts ----------
 // The extension ships with no default keys (a default can silently override a website's own
-// shortcut, or lose to another extension). Show whatever the user assigned on Chrome's shortcuts
+// shortcut, or lose to another extension). Show whatever the user assigned on the browser's shortcuts
 // page, which is the only place keys can be set.
-const SHORTCUTS_PAGE = 'chrome://extensions/shortcuts';
+const SHORTCUTS_PAGE = `${BROWSER_SCHEME}://extensions/shortcuts`;
 const shortcutEls = {
   set: document.getElementById('shortcutSet'),
   key: document.getElementById('shortcutKey'),
@@ -961,4 +968,5 @@ shortcutEls.btn.addEventListener('click', () => chrome.tabs.create({ url: SHORTC
 // Chrome has no event for shortcut changes; the side panel stays open, so re-read on return.
 window.addEventListener('focus', renderShortcuts);
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && renderShortcuts());
+shortcutEls.btn.title = `Choose a keyboard shortcut on ${BROWSER_NAME}'s shortcuts page`;
 renderShortcuts();

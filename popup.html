@@ -19,7 +19,7 @@
     </div>
     <div class="top-actions">
       <button id="openDemoBtn" class="icon-btn" title="Open Test Playground Page">Playground</button>
-      <button id="openPanelBtn" class="icon-btn square" title="Dock in Chrome's side panel (stays open while you browse)" aria-label="Open in side panel">
+      <button id="openPanelBtn" class="icon-btn square" title="Dock in the browser's side panel (stays open while you browse)" aria-label="Open in side panel">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
       </button>
       <button id="settingsBtn" class="icon-btn square" title="Configure Thresholds &amp; Overlay Mode" aria-label="Settings">
@@ -38,7 +38,7 @@
 
   <div class="stale-banner hidden" id="staleBanner" role="alert"></div>
   <div class="stale-banner hidden" id="accessBanner" role="alert">
-    Chrome is limiting this extension's site access, so images hosted on other sites (CDNs, Google, etc.) can't be measured or compressed.
+    Your browser is limiting this extension's site access, so images hosted on other sites (CDNs, Google, etc.) can't be measured or compressed.
     <button class="icon-btn" id="grantAccessBtn">Allow on all sites</button>
   </div>
 
@@ -166,10 +166,10 @@
   </main>
 
   <footer class="footer-bar">
-    <!-- Filled from chrome.commands: the user picks the key on chrome://extensions/shortcuts. -->
+    <!-- Filled from chrome.commands: the user picks the key on the browser's shortcuts page. -->
     <span class="shortcut-hint">
       <span id="shortcutSet" class="hidden">Shortcut: <kbd id="shortcutKey"></kbd></span>
-      <button id="shortcutBtn" class="shortcut-btn" title="Choose a keyboard shortcut on Chrome's shortcuts page">Set a shortcut</button>
+      <button id="shortcutBtn" class="shortcut-btn" title="Choose a keyboard shortcut on the browser's shortcuts page">Set a shortcut</button>
     </span>
     <div class="export-btns">
       <button id="copyMdBtn" class="footer-btn" title="Copy Markdown table for GitHub/Jira">Copy Markdown</button>
