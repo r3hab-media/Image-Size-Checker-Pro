@@ -11,7 +11,8 @@
   },
   "scripts": {
     "test": "node tests/run.mjs",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "puppeteer-core": "^24.43.1"
