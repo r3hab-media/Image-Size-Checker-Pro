@@ -143,12 +143,38 @@ Edge takes the same ZIP as Chrome; there is no separate Edge build. Submit at ht
 
 | Field | What to use |
 |---|---|
-| Description (250–10,000 characters) | The same description as in section 2 |
+| Description (1,000 characters max) | The Edge description below (the Chrome one is too long) |
 | Extension logo (1:1, 300×300 recommended) | `store/logo-300x300.png` |
 | Small promotional tile (440×280) | `store/promo-small-440x280.png` |
 | Large promotional tile (1400×560) | `store/promo-marquee-1400x560.png` |
 | Screenshots (1280×800) | The same three screenshots as in section 2 |
 | Search terms (up to 7, 30 characters each, 21 words total) | `image optimizer`, `compress images`, `image size`, `page speed`, `resize images`, `webp`, `seo audit` |
+
+**Description** (Edge allows 1,000 characters; this is a shortened version of the section 2 description):
+
+```
+Heavy images are the most common reason a page loads slowly. Image Size Checker Pro shows which images are too big, by how much, and fixes them without changing your markup.
+
+AUDIT ANY PAGE
+• File size, pixel dimensions and how each image is displayed
+• Flags heavy, oversized and distorted images, and missing alt text
+• Savings are measured by really compressing each image, not guessed
+
+COMPRESS AS DROP-IN REPLACEMENTS
+• Same filename, format and dimensions; PNG is lossless
+• Preview JPEG and WebP before and after, and pick the quality
+• One image, or all of them into a ZIP or a folder you choose
+
+RESIZE FOR DISPLAY
+• 1x and 2x versions sized for each image's space, with srcset markup
+
+EXTRAS
+• Optional WebP copies and lossy PNG
+• Export the audit as CSV, JSON or Markdown
+
+PRIVATE BY DESIGN
+No accounts, analytics or tracking. Everything runs in your browser and files are saved only to your computer.
+```
 
 **Notes for certification** (on the Submit page):
 
