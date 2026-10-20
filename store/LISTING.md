@@ -4,11 +4,15 @@ Everything needed to fill in the Chrome Web Store developer dashboard for versio
 
 ## 1. Build the upload
 
+On `main`, merged and pushed:
+
 ```
-npm run package
+npm run release
 ```
 
-This writes `dist/image-size-checker-pro-3.4.1.zip`. It refuses to build if packaged files have uncommitted changes, if the manifest and `package.json` versions differ, or if the description is over 132 characters. Upload that ZIP under **Package**.
+This builds `dist/image-size-checker-pro-3.4.1.zip`, tags the commit `v3.4.1`, and publishes a GitHub Release with the ZIP attached, so every store upload is recorded with the exact code it came from. Upload that ZIP under **Package** (and to Edge Add-ons). Extra arguments go to `gh release create`, for example `npm run release -- --notes "One-line summary"`.
+
+It refuses to run off `main`, with uncommitted changes, when `main` differs from `origin/main`, or when the tag already exists. The build itself (`npm run package`, which you can also run alone to try a build) refuses if the manifest and `package.json` versions differ or the description is over 132 characters.
 
 To refresh the store images after UI changes: `node scripts/store-assets.mjs`.
 
@@ -117,14 +121,14 @@ https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md
 ## After it is published
 
 - Watch installs, weekly users and uninstalls under the item's **Analytics** tab.
-- For each update: bump `version` in `manifest.json` and `package.json` (the store rejects a version it has already seen), run `npm test`, `npm run package`, and upload the new ZIP on the **Package** tab.
+- For each update: bump `version` in `manifest.json` and `package.json` (the store rejects a version it has already seen), run `npm test`, merge to `main`, run `npm run release`, and upload the released ZIP on the **Package** tab. Never upload a ZIP that has no release.
 - Upload the same ZIP to Edge Add-ons too, so both stores carry the same version.
 
 ## 6. Microsoft Edge Add-ons
 
 Edge takes the same ZIP as Chrome; there is no separate Edge build. Submit at https://partner.microsoft.com/dashboard/microsoftedge (register once as an Edge developer; it is free). The listing has these parts:
 
-**Packages:** upload `dist/image-size-checker-pro-3.4.1.zip`.
+**Packages:** upload `dist/image-size-checker-pro-3.4.1.zip`, the same released ZIP as Chrome (also attached to the `v3.4.1` GitHub Release).
 
 **Availability:** Public; all markets.
 

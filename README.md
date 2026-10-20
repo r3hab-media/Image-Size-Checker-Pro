@@ -83,7 +83,7 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 `npm install` then `npm test` runs the test suite in your installed Chrome (set `CHROME_PATH` if it is not in the default location; `HEADFUL=1` shows the browser). To run it in Edge, point `CHROME_PATH` at Edge, for example `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm test`. The tests load the unpacked extension and cover the compression engine (including pixel-exact PNG checks against Chrome's own decoder), scanning, the overlay, settings, and batch ZIP export.
 
-`npm run package` builds the store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. The same ZIP goes to the Chrome Web Store and Edge Add-ons. `node scripts/store-assets.mjs` regenerates the store screenshots, promo tiles and Edge's 300×300 logo in `store/`. The listing text, permission justifications and submission checklists for both stores are in [store/LISTING.md](store/LISTING.md).
+`npm run package` builds the store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. The same ZIP goes to the Chrome Web Store and Edge Add-ons. `npm run release` (on `main`, pushed) builds it, tags the commit `v<version>` and publishes a GitHub Release with the ZIP attached; every store upload should come from a release. `node scripts/store-assets.mjs` regenerates the store screenshots, promo tiles and Edge's 300×300 logo in `store/`. The listing text, permission justifications and submission checklists for both stores are in [store/LISTING.md](store/LISTING.md).
 
 ## Privacy
 
