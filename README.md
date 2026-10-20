@@ -1,6 +1,6 @@
 # Image Size Checker Pro
 
-A Manifest V3 Chrome extension that audits the images on a page and compresses them as **drop-in replacements**: same file format, same pixel dimensions, same filename.
+A Manifest V3 extension for Chrome and Microsoft Edge that audits the images on a page and compresses them as **drop-in replacements**: same file format, same pixel dimensions, same filename.
 
 ## What it checks
 
@@ -12,13 +12,13 @@ For every `<img>`, CSS `background-image` and inline `<svg>` on the page:
 - Missing `alt` (an empty `alt=""` is treated as decorative and not flagged)
 - Missing `width`/`height` (layout-shift risk) and `loading="lazy"` above the fold (LCP risk)
 
-Results appear as badges on the page and in the 750px popup (click the toolbar button), with CSV, JSON and Markdown export. Click the **side panel** button (next to Playground) to dock it in Chrome's side panel instead, where it stays open while you browse and follows the active tab.
+Results appear as badges on the page and in the 750px popup (click the toolbar button), with CSV, JSON and Markdown export. Click the **side panel** button (next to Playground) to dock it in the browser's side panel instead, where it stays open while you browse and follows the active tab.
 
 Pages are scanned when you open the popup or side panel, or press the badge shortcut. Turn on **Auto-scan every page I visit** in settings to scan every page automatically (this makes the extension request each page's images again).
 
 ## Keyboard shortcuts
 
-The extension ships with no default keys, because a default can override a website's own shortcut or clash with another extension. Click **Set a shortcut** in the popup footer (or open `chrome://extensions/shortcuts`) to assign keys to **Open Image Size Checker Pro** and **Show or hide the on-page image badges**. The footer then shows the key you chose.
+The extension ships with no default keys, because a default can override a website's own shortcut or clash with another extension. Click **Set a shortcut** in the popup footer (or open `chrome://extensions/shortcuts`, or `edge://extensions/shortcuts` in Edge) to assign keys to **Open Image Size Checker Pro** and **Show or hide the on-page image badges**. The footer then shows the key you chose.
 
 ## How compression works
 
@@ -66,14 +66,14 @@ CSS backgrounds get `image-set()` with `type()` entries. Even an already-optimal
 ## Saving
 
 - **Default:** each save opens the native Save-As dialog.
-- **Choose Folder…** opens a small window where you pick a folder on disk (for example your site's `public/images/`). The folder is remembered until you click **Use Save-As**. If Chrome's access to the folder lapses, you are asked again or the extension falls back to Save-As.
+- **Choose Folder…** opens a small window where you pick a folder on disk (for example your site's `public/images/`). The folder is remembered until you click **Use Save-As**. If the browser's access to the folder lapses, you are asked again or the extension falls back to Save-As.
 - Existing files are not overwritten unless you tick **Overwrite files with the same name** (otherwise a copy such as `hero (1).png` is written).
 - Compression runs in the background, so you can close the popup or side panel, or switch tabs, while a batch runs; reopen it on that tab to see the result.
 - **Compress & Download All Compressible to ZIP** bundles every compressible image that the test run showed can shrink. Images that fail to download are listed in the status line; the rest of the batch still completes.
 
-## Load locally in Chrome
+## Load locally in Chrome or Edge
 
-1. Open `chrome://extensions/` and enable **Developer mode**.
+1. Open `chrome://extensions/` (Edge: `edge://extensions/`) and enable **Developer mode**.
 2. Click **Load unpacked** and select this folder.
 3. Open the extension's **Playground** button for a built-in test page.
 
@@ -81,9 +81,9 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 ## Development
 
-`npm install` then `npm test` runs the test suite in your installed Chrome (set `CHROME_PATH` if it is not in the default location; `HEADFUL=1` shows the browser). The tests load the unpacked extension and cover the compression engine (including pixel-exact PNG checks against Chrome's own decoder), scanning, the overlay, settings, and batch ZIP export.
+`npm install` then `npm test` runs the test suite in your installed Chrome (set `CHROME_PATH` if it is not in the default location; `HEADFUL=1` shows the browser). To run it in Edge, point `CHROME_PATH` at Edge, for example `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm test`. The tests load the unpacked extension and cover the compression engine (including pixel-exact PNG checks against Chrome's own decoder), scanning, the overlay, settings, and batch ZIP export.
 
-`npm run package` builds the Chrome Web Store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. `node scripts/store-assets.mjs` regenerates the store screenshots and promo tile in `store/`. The listing text, permission justifications and submission checklist are in [store/LISTING.md](store/LISTING.md).
+`npm run package` builds the store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. The same ZIP goes to the Chrome Web Store and Edge Add-ons. `node scripts/store-assets.mjs` regenerates the store screenshots, promo tiles and Edge's 300×300 logo in `store/`. The listing text, permission justifications and submission checklists for both stores are in [store/LISTING.md](store/LISTING.md).
 
 ## Privacy
 

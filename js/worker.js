@@ -76,7 +76,7 @@ const UNSUPPORTED_REASON = {
   bmp: 'BMP cannot be compressed without converting it; original kept so the file type does not change.',
   ico: 'ICO files are kept as-is.',
   avif: 'AVIF cannot be re-encoded in the browser; original kept (AVIF is already highly compressed).',
-  heic: 'HEIC cannot be decoded or re-encoded in Chrome; original kept.'
+  heic: 'HEIC cannot be decoded or re-encoded in the browser; original kept.'
 };
 
 // ---------- encoders ----------

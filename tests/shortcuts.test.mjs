@@ -31,13 +31,19 @@ export const tests = {
     }
   },
 
-  'with no shortcut, the footer offers "Set a shortcut", which opens Chrome\'s shortcuts page': async (ctx) => {
+  'with no shortcut, the footer offers "Set a shortcut", which opens the browser\'s shortcuts page': async (ctx) => {
     const popup = await popupPage(ctx);
     const view = await footer(popup);
     if (!view.setHidden || view.btn !== 'Set a shortcut' || view.btnIsLink) throw new Error('footer ' + JSON.stringify(view));
     if (view.toggleTitle !== 'Show or hide the on-page image badges') throw new Error('toggle title ' + view.toggleTitle);
+    // The same package runs in Chrome and Edge; the button names the browser it is running in.
+    const { title, isEdge } = await popup.evaluate(() => ({
+      title: document.getElementById('shortcutBtn').title,
+      isEdge: navigator.userAgentData.brands.some((b) => b.brand === 'Microsoft Edge')
+    }));
+    if (title !== `Choose a keyboard shortcut on ${isEdge ? 'Edge' : 'Chrome'}'s shortcuts page`) throw new Error('button title ' + title);
 
-    const opened = ctx.browser.waitForTarget((t) => t.url().startsWith('chrome://extensions/shortcuts'), { timeout: 5000 });
+    const opened = ctx.browser.waitForTarget((t) => /^(chrome|edge):\/\/extensions\/shortcuts/.test(t.url()), { timeout: 5000 });
     await popup.click('#shortcutBtn');
     const target = await opened;
     await Promise.all([popup.close(), target.page().then((p) => p && p.close())]);
