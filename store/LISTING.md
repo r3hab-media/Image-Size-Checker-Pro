@@ -179,7 +179,7 @@ No accounts, analytics or tracking. Everything runs in your browser and files ar
 **Notes for certification** (on the Submit page):
 
 ```
-No account or sign-in is needed. To test: open any web page with images (or click "Playground" in the popup for a built-in test page), click the toolbar button, and the popup lists every image with its file size and dimensions. Click "Compress" on an image to save a smaller copy with the same filename, or "Compress & Download All Compressible to ZIP" for a batch. "Resize" appears on images larger than their display size. The side panel button docks the same report in the Edge sidebar.
+No account or sign-in is needed. To test: open any web page with images (or click "Playground" in the popup for a built-in test page), click the toolbar button, and the popup lists every image with its file size and dimensions. Click "Compress" on an image to save a smaller copy with the same filename; a Save-As dialog opens for the file. "Compress & Download All Compressible" saves a batch as one ZIP. "Resize" appears on images larger than their display size. The side panel button docks the same report in the Edge sidebar.
 
 The extension needs access to all sites because it audits whichever page the user chooses, and those images are often hosted on other domains (CDNs). Pages are scanned only when the user opens the extension or presses its shortcut, unless they turn on auto-scan. Nothing is sent anywhere; all processing happens locally.
 ```
