@@ -1,91 +1,93 @@
 # Handoff
 
-Updated 2026-10-17 15:34 (USMST)
-Branch main (clean, in sync with origin/main at 97cc990)
+Updated 2026-10-21
+Branches `feat/3.5.0-listing` → `feat/landing-page` (stacked, committed locally, **not pushed**). `main` is at f4f5e61 (3.4.1).
 
 ## Goal
-Image Size Checker Pro is a Manifest V3 Chrome/Edge extension. It audits page images (size, dimensions, aspect, alt, CLS/LCP) and fixes them: lossless/high-quality compression in the original format, resizing for display with srcset snippets, optional WebP and lossy PNG. Work follows a phased roadmap, one feature branch per change. The user uses it on their own sites (jarednewnam.com, scottsdaleaz.gov) in Chrome and Edge.
+Image Size Checker Pro is a Manifest V3 extension for Chrome and Edge, live in both stores at 3.4.1. It audits page images and compresses them as drop-in replacements (same name, format and dimensions). The current task is release 3.5.0, a promotion update: search-tuned store text, a GitHub Pages landing page, a changelog, and an investigation of a Firefox port.
+
+- Chrome: https://chromewebstore.google.com/detail/image-size-checker-pro/ibcbajbelpfnngmeaelfbbojmocmacpa
+- Edge: https://microsoftedge.microsoft.com/addons/detail/image-size-checker-pro/kdcdiekcbloocageafpcpihkgddlenab
+- Site (after Pages is enabled): https://r3hab-media.github.io/Image-Size-Checker-Pro/
 
 ## Current State
-- Version 3.3.1. PRs #1–#10 are merged into main. `npm test`: 78/78, three consecutive full runs before each merge.
-- Phases 0–2 of the roadmap are done. Phase 3 has not started.
-- Work stopped mid-conversation. The user asked whether Edge's Downloads path matches Chrome's. Answer given: each browser has its own download location setting; both default to the Windows Downloads folder. I then offered two things, **not yet approved or started**:
-  1. run the test suite against Edge;
-  2. add a third save option, "Save straight to my Downloads folder" (chrome.downloads, `saveAs: false`, optional subfolder).
-- The user hit Chrome's folder-picker block on `D:\` ("Can't open this folder because it contains system files"). This is Chromium's File System Access blocklist for drive roots and system folders; it can't be overridden. Workarounds: pick a subfolder, use Save-As, or the proposed Downloads option.
-- Needs manual verification by the user (it can't be automated):
-  - the real Chrome permission prompt inside the new "Allow access" window (PR #10);
-  - the "Allow on all sites" banner when site access is restricted;
-  - Save-As including cancel;
-  - the ZIP downloads that go through Save-As;
-  - the real toolbar click.
-- The user's Chrome showed CORS errors for `https://www.gstatic.com/...translate_24dp.png`. Assumed cause: site access set to "On click"/"specific sites". I verified extension fetches succeed with full access. PR #10 adds detection and skips the blocked fetches.
+- **Version 3.5.0** in `manifest.json` and `package.json`. This is a minor bump: the listing text changes, a homepage link is added, and a new website ships. Extension behavior is unchanged.
+- `feat/3.5.0-listing` (98b6c6a):
+  - new manifest description (125 characters) and `homepage_url`
+  - the settings privacy link now points at the Pages copy of the policy
+  - `store/LISTING.md` rewritten
+  - `CHANGELOG.md` added
+  - store links added to the top of README
+  - `tests/update-safety.test.mjs` added
+- `feat/landing-page` (0ef9ccc):
+  - `docs/` site: `index.html`, `privacy.html`, `site.css`, `img/`, `.nojekyll`
+  - `scripts/store-assets.mjs` builds `docs/img` (`--site-only` mode)
+  - `tests/site.test.mjs` added
+- `npm test`: 93/93. `npm run package` builds `dist/image-size-checker-pro-3.5.0.zip` (no `docs/` in it).
+- **No paid tier existed anywhere.** There were no free vs Pro, upgrade or licensing mentions to remove. There is no `docs/freemium-plan.md`.
+- **Permissions are unchanged from 3.4.1:**
+  - `scripting`, `storage`, `downloads`, `sidePanel`, `offscreen`, plus `<all_urls>` host permission and content script
+  - `homepage_url` is not a permission and causes no prompt
+  - no storage keys changed, so no migration is needed
+- The brief said an earlier task had reduced install permissions and put the privacy policy on Pages. Neither was in the repo. I assumed the `<all_urls>` manifest on `main` is what's live; the user did not confirm.
+- Firefox port: investigated and reported to the user, **waiting for approval to build** (see Next Steps).
 
 ## Decisions Made
-- **Main UI is a fixed 750px toolbar popup** (user requirement). The side panel is optional via a "⇥ Side panel" button and loads `popup.html?panel=1` (fluid). Rejected: side panel as default, because Chrome controls its width (~440px) and the user rejected it.
-- **The whole page scrolls**, with a sticky topbar/footer. Output options (overwrite, WebP, lossy PNG) sit in a collapsed `<details>`. Reason: the user said the image list was "functionally useless" when squeezed.
-- **Original format is always preserved.** GIF/BMP/ICO/AVIF/HEIC and animated images are kept unchanged. Rejected: converting under the original filename (old bug).
-- **PNG is bit-exact** via a pure-JS PNG decoder/encoder (`js/png.js`), not canvas, because canvas premultiplies alpha and converts color.
-- **JPEG/WebP:** quality 92, floor 82. Only the preview's explicit `chosenQuality` may go down to 40. ICC/EXIF are kept; EXIF orientation is reset to 1.
-- **Resize naming** (chosen by the user): `name-<width>w.ext`, 1x and 2x of the displayed width, never upscaling. CSS backgrounds get `image-set()`.
-- **Lossy PNG** uses an in-house quantizer (`js/quantize.js`). Rejected libimagequant because it's GPL. It's kept only if smaller and ≥36 dB PSNR. Alpha classes (transparent/translucent/opaque) are quantized separately.
-- **Compression runs in an offscreen document** (`offscreen.html/js`, `js/jobs.js`), driven by the service worker, so jobs survive the popup closing. User jobs take priority over savings estimates.
-- **The popup never calls `requestPermission`**, because Chrome's prompt closes the popup. The background job opens `folder.html?grant=<jobId>` when the folder grant has lapsed.
-- Pages are only scanned when asked (popup/shortcut), unless the "Auto-scan every page" setting is on.
-- Not recommended: color picker/palette features from competitors.
+- **One description for both stores.** The user dropped the separate 1,000-character Edge description. Edge's real limit is 250 to 10,000 characters, and Chrome's is 16,000.
+- **Site in `/docs` on `main`**, served by GitHub Pages, so the site and the code ship together. It has no build step.
+- **The site loads only:**
+  - system fonts (Rubik is not used there, to save weight)
+  - WebP screenshots at 640/960/1280 widths, with no PNG fallback since all target browsers support WebP
+  - no scripts, cookies or third-party requests
+  - the hero image loads eagerly with `fetchpriority="high"`; the rest are lazy
+- **The share image goes through the extension's own lossy PNG optimizer**, from 215 KB to 81 KB at 36 dB PSNR or better.
+- **The privacy policy has two copies:** `PRIVACY.md` and `docs/privacy.html`. A test fails if any paragraph differs.
+- **Update guard:** `tests/update-safety.test.mjs` compares the manifest with the latest `v*` tag. It fails on new permissions, host permissions or content-script matches, a changed name or key, or a version that didn't go up.
+- **No Firefox install button on the site** until a real AMO listing URL exists.
 
 ## Files and Locations
-- Repo: https://github.com/r3hab-media/Image-Size-Checker-Pro (`origin`). The old remote `cos-origin` (cos-jnewnam) is kept.
-- `manifest.json`: v3.3.1. Permissions: scripting, storage, downloads, sidePanel, offscreen, `<all_urls>`. `action.default_popup: popup.html`; `side_panel.default_path: popup.html?panel=1`.
-- `background.js`: size lookups (HEAD → Range → GET, cookie retry, skips hosts without access); downloads with cancel detection; badge; offscreen lifecycle (waits for create/close, ack + retry); estimates cache (session storage, key includes lossy flag); folder-access window orchestration; `setPanelBehavior({openPanelOnActionClick:false})`.
-- `content.js`: scan engine and overlay. Stable IDs, serialized scans, `needsCompression`/`needsResize`, `CONTENT_VERSION = 2` (popup expects 2; mismatch shows the stale banner).
-- `popup.html/js/css`: UI. Test API `window.__iscPopup` (ensureAndScan, getState, compressAllTooLargeToZip, resizeAllOversized, showStaleBanner).
-- `offscreen.html/js`: job + estimate queues.
-- `folder.html/js`: pick mode, and grant mode (`?grant=`).
-- `js/jobs.js`: fetch, compress, resize, WebP, ZIP, save, folder access wait.
-- `js/worker.js`: engine (compressImageBuffer, resizeImageBuffer with outFormat 'webp').
-- `js/png.js`: PNG codec, lossless/lossy optimizers, encodeRgbaPng.
-- `js/quantize.js`: quantizer + psnr.
-- `js/jpeg-meta.js`: JPEG metadata transplant.
-- `js/zip.js`, `js/crc32.js`: store-only ZIP.
-- `js/folder-store.js`: IndexedDB folder handle, plus a **test hook** `setSimulatedPermission`.
-- `js/preview.js`: before/after modal.
-- `tests/*.test.mjs`, `tests/run.mjs`, `tests/helpers.js`: Puppeteer suite.
-- `README.md`: documents all features.
-- Memory: `C:\Users\jared\.claude\projects\d--Personal-Projects-Image-Size-Checker-Pro\memory\` (`isc-pro-backlog.md` roadmap, `isc-ui-width.md`).
-- Scratch probes: `C:\Users\jared\AppData\Local\Temp\claude\d--Personal-Projects-Image-Size-Checker-Pro\76fdce26-0c8a-406c-bce7-233e7fbe7858\scratchpad\harness\` (not part of the repo).
+- `store/LISTING.md`: character limits table, shared short description and description, the "what's new" text, Chrome tabs, Edge fields (including search terms and certification notes), and the pre-submit checklist.
+- `CHANGELOG.md`: plain-language entries for 3.5.0, 3.4.1 and 3.4.0.
+- `docs/`: the site. `docs/img/*` is generated by `node scripts/store-assets.mjs --site-only`; don't hand-edit it.
+- `tests/site.test.mjs`: checks local links, alt text, dimensions and lazy loading, the 300 KB page budget, the OG/X tags with a 1200×630 image, that privacy text matches, that there are no em dashes, that there's no horizontal scroll at 360px, and that focus outlines show.
+- Repo: https://github.com/r3hab-media/Image-Size-Checker-Pro. The old remote `cos-origin` is kept.
+- Memory: `C:\Users\jared\.claude\projects\d--Personal-Projects-Image-Size-Checker-Pro\memory\`
 
 ## What Failed
-- Automating Chrome's native folder picker: `page.waitForFileChooser` → `ProtocolError: Protocol error (DOM.resolveNode): Either nodeId or backendNodeId must be specified.` (The FS Access picker has no input element.)
-- Getting a real folder handle via CDP `Input.dispatchDragEvent` drop in headless: it hung with no drop event.
-- `chrome.permissions.remove` to simulate withheld site access: "You cannot remove required permissions."
-- Shell edits with backticks or `\n` inside `node -e "..."` got mangled by bash several times. Write a `.cjs` script file to `$TEMP` and run it, or use the Edit tool.
-- Files are CRLF after checkout (git autocrlf). String replacements must normalize `\r\n` first.
-- Never `git checkout -- <file>` to undo a mutation test on uncommitted work: that wiped `content.js` once. Back up to the scratchpad and copy back.
+- One `npm test update-safety` run failed while launching the browser (a Puppeteer launch error, before any test ran). An immediate rerun passed. It's probably a leftover Chrome process; it didn't recur.
+- Earlier notes still apply:
+  - Files are CRLF after checkout, so normalize `\r\n` in scripted edits.
+  - Write `.cjs` scripts to `$TEMP` instead of using `node -e` with backticks.
+  - Never `git checkout -- <file>` to undo a mutation test; copy a backup back instead.
 
 ## Next Steps
-1. Get the user's answer on the two pending offers: (a) run `npm test` against Edge with `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"` (verify the path exists first); (b) add a "Save straight to my Downloads folder" destination (chrome.downloads, `saveAs:false`, optional subfolder, works in Chrome and Edge, sidesteps the drive-root block and the Allow window).
-2. Follow the per-change workflow for whichever is approved: branch → implement → targeted tests → full suite ×3 → commit → push → `gh pr create` → `gh pr merge --merge --delete-branch` → pull main.
-3. Ask the user for results of the manual checks listed under Current State.
-4. Phase 3 (deeper audit), best-first: real LCP via PerformanceObserver + fetchpriority/preload suggestions; srcset/sizes correctness; below-fold images not lazy; mobile DPR simulation; delivery checks (Cache-Control, gzip SVG, WebP negotiation); ICC display + alt-text quality.
-5. Phase 4: right-click inspect/compress; SPA navigation + iframes; shareable HTML report; multi-page/sitemap audit.
-6. Phase 5: Web Store readiness (permission justifications, privacy policy, listing assets); optional AVIF via wasm.
+1. Get the user's OK to push both branches and open PRs (stacked: the listing PR into `main`, then the landing page PR).
+2. User: enable Pages in repo Settings, Pages, Deploy from a branch, `main`, `/docs`. Check that the site and `/privacy.html` load, and test the share card with LinkedIn Post Inspector and an X post preview.
+3. After merging: `npm run release` on `main`, upload the ZIP to both stores, and paste the text from `store/LISTING.md`.
+4. **Firefox port, if approved:**
+   - add `npm run package -- --firefox`, which outputs `dist/image-size-checker-pro-<v>-firefox.zip` with a generated manifest: `background.scripts`, `sidebar_action`, `browser_specific_settings.gecko` with `id`, `strict_min_version: 140.0` and `data_collection_permissions: {required: ["none"]}`, and no `offscreen`/`sidePanel`/`minimum_chrome_version`
+   - shims: run the offscreen job queue directly in the Firefox background page; `browser.sidebarAction.open()` for the side panel button; hide Choose Folder (no File System Access API); `commands.openShortcutSettings()` for the shortcut link; pass blob URLs to `downloads.download`
+   - add Firefox to the `store/` checklist
+   - manual testing in Firefox
+5. Known open items:
+   - The playground page title contains an em dash (`demo-playground.html`). It shows in the extension and in `store/screenshot-3-page.png`. Fixing it means regenerating the store screenshots.
+   - There's no LICENSE file, though `package.json` says MIT. The site says "source code is on GitHub" rather than "open source".
+6. Older backlog (Phase 3 audits and onward) is unchanged; see the memory file `isc-pro-backlog.md`.
 
 ## Open Questions
-- Run the suite on Edge? — needs user input.
-- Add the "Save straight to Downloads" option, and its default subfolder name? — needs user input.
-- Does the real permission prompt in the Allow window work, and does Chrome offer "Allow on every visit"? — needs user input (manual test).
-- Start Phase 3 now, or after manual testing? — needs user input.
+- Is the `<all_urls>` manifest on `main` exactly what's live in both stores? (Not answered; assumed yes.)
+- Push and open PRs? (The brief said don't push; the user's opening line said push.)
+- Approve the Firefox build?
+- Add a LICENSE file (MIT)?
 
 ## Constraints and Preferences
-- The main UI must be the 750px popup, and the image list must get most of the height. Check a 750×600 screenshot before shipping UI changes.
-- One feature branch per update. Test, commit/push, PR, merge. Commits end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. PR bodies end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
-- Test before moving on. Run the full suite three times before merging, and mutation-check new tests where practical.
-- Report honestly what was and wasn't verified (native dialogs can't be automated).
-- After extension files change, the user must reload the extension at chrome://extensions and refresh tabs. The stale banner warns about this.
+- No new required permissions or host permissions in updates. Don't change the name, ID or key. Storage key changes need an `onInstalled` "update" migration plus a test.
+- User-facing writing: plain short sentences, no em dashes, no hype words.
+- The main UI is the 750px popup. Check a 750×600 screenshot before shipping UI changes.
+- One feature branch per update. Test, commit, then push and PR only when the user allows it. Commits end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; PR bodies end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+- Run the full suite three times before merging. Don't run `npm run release` unless asked.
 
 ## Commands and Setup
-- `npm install` (puppeteer-core devDependency), then `npm test`, or `npm test <file-filter> <test-name-filter>`.
-- Env: `CHROME_PATH` (defaults to `C:/Program Files/Google/Chrome/Application/chrome.exe`); `HEADFUL=1` to watch.
-- The runner loads the unpacked extension via CDP `installExtension`, serves the repo plus test routes on 127.0.0.1, and has a 90s protocol timeout. A full run takes ~2–4 minutes; use `run_in_background` for ×3 runs.
-- GitHub CLI is logged in as r3hab-media.
+- `npm install`, then `npm test` (or `npm test <file-filter> <test-name-filter>`). Set `CHROME_PATH` for Edge; `HEADFUL=1` to watch.
+- `npm run package` builds the store ZIP. `npm run release` tags and publishes it (on `main` only).
+- `node scripts/store-assets.mjs` regenerates the store images and the site images; `--site-only` rebuilds only the site images.
