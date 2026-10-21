@@ -193,6 +193,11 @@ kbd {
   flex-shrink: 0;
 }
 
+/* Class display rules (such as .icon-btn's inline-flex) would otherwise override the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 .icon-btn {
   display: inline-flex;
   align-items: center;

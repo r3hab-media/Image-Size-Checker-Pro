@@ -1,4 +1,7 @@
-// Builds the Chrome Web Store upload: dist/image-size-checker-pro-<version>.zip.
+// Builds the store uploads:
+// - dist/image-size-checker-pro-<version>.zip for the Chrome Web Store and Edge Add-ons (manifest.json as is)
+// - dist/image-size-checker-pro-<version>-firefox.zip for Firefox Add-ons (manifest from scripts/firefox-manifest.mjs),
+//   plus the same files unpacked in dist/firefox/ for about:debugging and npm run test:firefox.
 // Only git-tracked runtime files are included (no tests, notes, store assets or node_modules),
 // and the build fails if the manifest is not uploadable.
 import { execFileSync } from 'node:child_process';
@@ -6,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeZip } from '../js/zip.js';
+import { firefoxManifest, FIREFOX_ONLY_FILES } from './firefox-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f));
@@ -37,7 +41,7 @@ const referenced = [
 ]
   .filter(Boolean)
   .map((f) => f.split('?')[0]);
-for (const f of new Set(referenced)) if (!files.includes(f)) problems.push(`manifest references ${f}, which is not packaged`);
+for (const f of new Set([...referenced, ...FIREFOX_ONLY_FILES])) if (!files.includes(f)) problems.push(`manifest references ${f}, which is not packaged`);
 
 // Uncommitted changes would not match what was tested and reviewed.
 const dirty = execFileSync('git', ['status', '--porcelain', '--', ...files], { cwd: ROOT, encoding: 'utf8' }).trim();
@@ -48,10 +52,26 @@ if (problems.length) {
   process.exit(1);
 }
 
-const zip = makeZip(files.map((name) => ({ name, data: new Uint8Array(read(name)) })));
-const out = path.join(ROOT, 'dist', `image-size-checker-pro-${manifest.version}.zip`);
-fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, Buffer.from(await zip.arrayBuffer()));
+async function writeZip(name, entries) {
+  const out = path.join(ROOT, 'dist', name);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, Buffer.from(await makeZip(entries).arrayBuffer()));
+  console.log(`dist/${name}: ${entries.length} files, ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
+}
 
-console.log(`${path.relative(ROOT, out)}: ${files.length} files, ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
-for (const f of files) console.log('  ' + f);
+// Chrome and Edge: the manifest exactly as committed, without the Firefox-only shim.
+const chromeFiles = files.filter((f) => !FIREFOX_ONLY_FILES.includes(f));
+await writeZip(`image-size-checker-pro-${manifest.version}.zip`, chromeFiles.map((name) => ({ name, data: new Uint8Array(read(name)) })));
+
+// Firefox: same files, generated manifest.
+const ffManifest = new TextEncoder().encode(JSON.stringify(firefoxManifest(manifest), null, 2) + '\n');
+const ffEntries = files.map((name) => ({ name, data: name === 'manifest.json' ? ffManifest : new Uint8Array(read(name)) }));
+await writeZip(`image-size-checker-pro-${manifest.version}-firefox.zip`, ffEntries);
+const ffDir = path.join(ROOT, 'dist', 'firefox');
+fs.rmSync(ffDir, { recursive: true, force: true });
+for (const { name, data } of ffEntries) {
+  fs.mkdirSync(path.dirname(path.join(ffDir, name)), { recursive: true });
+  fs.writeFileSync(path.join(ffDir, name), data);
+}
+
+for (const f of files) console.log('  ' + f + (FIREFOX_ONLY_FILES.includes(f) ? ' (Firefox only)' : ''));
