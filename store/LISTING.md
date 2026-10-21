@@ -1,6 +1,23 @@
 # Store submission kit
 
-Everything needed to fill in the Chrome Web Store developer dashboard for version 3.4.1. Copy each block into the matching field. The same ZIP and most of the same text go to Microsoft Edge Add-ons; [section 6](#6-microsoft-edge-add-ons) covers what differs there.
+Everything needed to fill in the Chrome Web Store and Microsoft Edge Add-ons dashboards for version 3.5.0. Copy each block into the matching field. Both stores take the same ZIP and the same description.
+
+Live listings:
+- Chrome: https://chromewebstore.google.com/detail/image-size-checker-pro/ibcbajbelpfnngmeaelfbbojmocmacpa
+- Edge: https://microsoftedge.microsoft.com/addons/detail/image-size-checker-pro/kdcdiekcbloocageafpcpihkgddlenab
+
+Project site: https://r3hab-media.github.io/Image-Size-Checker-Pro/ (served from `docs/` on `main` by GitHub Pages).
+
+## Character limits used
+
+| Field | Chrome Web Store | Edge Add-ons |
+|---|---|---|
+| Name | 75 (manifest `name`) | from the manifest, read-only |
+| Short description | 132 (manifest `description`, shown as the summary) | from the manifest `description`, read-only |
+| Description | 16,000 | 250 minimum, 10,000 maximum |
+| Search terms | none | up to 7 terms, 30 characters each, 21 words in total |
+
+`npm run package` refuses to build when the manifest description is over 132 characters. The description below is about 2,000 characters, so it fits both stores.
 
 ## 1. Build the upload
 
@@ -10,31 +27,29 @@ On `main`, merged and pushed:
 npm run release
 ```
 
-This builds `dist/image-size-checker-pro-3.4.1.zip`, tags the commit `v3.4.1`, and publishes a GitHub Release with the ZIP attached, so every store upload is recorded with the exact code it came from. Upload that ZIP under **Package** (and to Edge Add-ons). Extra arguments go to `gh release create`, for example `npm run release -- --notes "One-line summary"`.
+This builds `dist/image-size-checker-pro-3.5.0.zip`, tags the commit `v3.5.0`, and publishes a GitHub Release with the ZIP attached, so every store upload is recorded with the exact code it came from. Upload that ZIP to both stores. Extra arguments go to `gh release create`, for example `npm run release -- --notes "One-line summary"`.
 
-It refuses to run off `main`, with uncommitted changes, when `main` differs from `origin/main`, or when the tag already exists. The build itself (`npm run package`, which you can also run alone to try a build) refuses if the manifest and `package.json` versions differ or the description is over 132 characters.
+It refuses to run off `main`, with uncommitted changes, when `main` differs from `origin/main`, or when the tag already exists. The build itself (`npm run package`, which you can also run alone to try a build) refuses if the manifest and `package.json` versions differ or the description is over 132 characters. `npm test` fails if the manifest adds a permission, host permission or content-script match that the last release tag did not have, because that would disable the update for existing users until they accept the new warning.
 
-To refresh the store images after UI changes: `node scripts/store-assets.mjs`.
+To refresh the store images and the project site's images after UI changes: `node scripts/store-assets.mjs`.
 
-## 2. Store listing tab
+## 2. Shared text
 
-**Name** (from the manifest): Image Size Checker Pro
-
-**Summary** (from the manifest, 132 characters max):
-Find heavy, oversized and distorted images on any page, then compress or resize them as drop-in replacements with the same filename.
-
-**Category:** Developer Tools
-
-**Language:** English
-
-**Description** (plain text; the store does not render Markdown):
+### Short description (both stores, from the manifest)
 
 ```
-Heavy images are the most common reason a page loads slowly. Image Size Checker Pro shows you which images are too big, by how much, and fixes them without changing your markup.
+Check image size and compress images for page speed. Shows measured savings. Files keep the same name, format and dimensions.
+```
+
+### Description (both stores, plain text; neither store renders Markdown)
+
+```
+Image Size Checker Pro finds the images that hurt your page speed, LCP and Core Web Vitals, and helps you compress images without changing your markup. Savings are measured by really compressing each JPEG, PNG and WebP, and you get drop-in replacement files with the same name, format and dimensions.
 
 AUDIT ANY PAGE
 • File size, pixel dimensions and how each image is actually displayed
 • Flags images over your size limit, images with far more pixels than they need, stretched or squashed images, and missing alt text
+• Flags missing width and height (layout shift) and lazy-loaded images above the fold (slower LCP)
 • Achievable savings are measured by really compressing each image, not guessed
 • Badges and tooltips right on the page, or a clean report in the popup or side panel
 
@@ -58,7 +73,30 @@ PRIVATE BY DESIGN
 No accounts, no analytics, no tracking. Pages are scanned only when you ask (unless you turn on auto-scan), all processing happens in your browser, and files are saved only to your computer.
 
 Optional keyboard shortcuts: pick your own keys to open the extension or show and hide the on-page badges.
+
+Website, changelog and privacy policy: https://r3hab-media.github.io/Image-Size-Checker-Pro/
 ```
+
+### What's new in 3.5.0 (for release notes and posts)
+
+```
+Image Size Checker Pro now has a project website with screenshots, install links, the changelog and the privacy policy. The store listing explains more clearly what makes it different: savings are measured by really compressing each image, and you get files with the same name, format and dimensions. How the extension works is unchanged, and your settings carry over.
+```
+
+## 3. Chrome Web Store
+
+Dashboard: https://chrome.google.com/webstore/devconsole
+
+### Package tab
+
+Upload `dist/image-size-checker-pro-3.5.0.zip` (also attached to the `v3.5.0` GitHub Release).
+
+### Store listing tab
+
+- **Name and summary:** come from the manifest (section 2).
+- **Description:** the description in section 2.
+- **Category:** Developer Tools
+- **Language:** English
 
 **Images:**
 
@@ -70,12 +108,12 @@ Optional keyboard shortcuts: pick your own keys to open the extension or show an
 | Marquee promo tile (1400×560) | `store/promo-marquee-1400x560.png` (optional; only used if Google features the extension) |
 
 **Additional fields:**
-- Homepage URL: https://github.com/r3hab-media/Image-Size-Checker-Pro
+- Homepage URL: https://r3hab-media.github.io/Image-Size-Checker-Pro/
 - Support URL: https://github.com/r3hab-media/Image-Size-Checker-Pro/issues
 
-## 3. Privacy practices tab
+### Privacy practices tab
 
-**Single purpose** (one sentence describing the extension's narrow purpose):
+**Single purpose:**
 
 ```
 Audit the images on the current web page for file size, dimensions, aspect ratio and alt text, and create smaller drop-in replacement files for them.
@@ -100,91 +138,62 @@ Then check all three certifications:
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose
 - I do not use or transfer user data to determine creditworthiness or for lending purposes
 
-**Privacy policy URL:**
-https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md
+**Privacy policy URL:** https://r3hab-media.github.io/Image-Size-Checker-Pro/privacy.html
 
-## 4. Distribution tab
+### Distribution tab
 
-- Visibility: **Public** (or **Unlisted** for a soft launch: only people with the link can install it)
+- Visibility: **Public**
 - Regions: all regions
 - Pricing: free
 
-## 5. Before you press Submit
+## 4. Microsoft Edge Add-ons
 
-- [ ] Developer account registered at https://chrome.google.com/webstore/devconsole (one-time $5 fee) and contact email verified
-- [ ] PR merged to `main`, so the privacy policy URL above works
-- [ ] `npm test` passes and `npm run package` built the ZIP from committed code
-- [ ] Loaded `dist/…zip` contents as an unpacked extension once and clicked through: scan, compress one image, ZIP, resize, preview, side panel
-- [ ] Listing, privacy and distribution tabs filled in; no warnings shown in the dashboard
-- [ ] Expect review to take a few days: access to all sites triggers a closer review
+Dashboard: https://partner.microsoft.com/dashboard/microsoftedge
 
-## After it is published
-
-- Watch installs, weekly users and uninstalls under the item's **Analytics** tab.
-- For each update: bump `version` in `manifest.json` and `package.json` (the store rejects a version it has already seen), run `npm test`, merge to `main`, run `npm run release`, and upload the released ZIP on the **Package** tab. Never upload a ZIP that has no release.
-- Upload the same ZIP to Edge Add-ons too, so both stores carry the same version.
-
-## 6. Microsoft Edge Add-ons
-
-Edge takes the same ZIP as Chrome; there is no separate Edge build. Submit at https://partner.microsoft.com/dashboard/microsoftedge (register once as an Edge developer; it is free). The listing has these parts:
-
-**Packages:** upload `dist/image-size-checker-pro-3.4.1.zip`, the same released ZIP as Chrome (also attached to the `v3.4.1` GitHub Release).
+**Packages:** upload `dist/image-size-checker-pro-3.5.0.zip`, the same released ZIP as Chrome.
 
 **Availability:** Public; all markets.
 
 **Properties:**
 - Category: Developer tools
-- Privacy policy: the extension does not collect personal information, but give the URL anyway: https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md
-- Website: https://github.com/r3hab-media/Image-Size-Checker-Pro
+- Website: https://r3hab-media.github.io/Image-Size-Checker-Pro/
 - Support contact: https://github.com/r3hab-media/Image-Size-Checker-Pro/issues
 - Mature content: No
+
+**Privacy:** the same single purpose, permission justifications, remote code answer and data usage as the Chrome privacy practices tab (section 3). Privacy policy URL: https://r3hab-media.github.io/Image-Size-Checker-Pro/privacy.html
 
 **Store listings (English):**
 
 | Field | What to use |
 |---|---|
-| Description (1,000 characters max) | The Edge description below (the Chrome one is too long) |
+| Description (250 to 10,000 characters) | The description in section 2 |
 | Extension logo (1:1, 300×300 recommended) | `store/logo-300x300.png` |
 | Small promotional tile (440×280) | `store/promo-small-440x280.png` |
 | Large promotional tile (1400×560) | `store/promo-marquee-1400x560.png` |
-| Screenshots (1280×800) | The same three screenshots as in section 2 |
-| Search terms (up to 7, 30 characters each, 21 words total) | `image optimizer`, `compress images`, `image size`, `page speed`, `resize images`, `webp`, `seo audit` |
-
-**Description** (Edge allows 1,000 characters; this is a shortened version of the section 2 description):
-
-```
-Heavy images are the most common reason a page loads slowly. Image Size Checker Pro shows which images are too big, by how much, and fixes them without changing your markup.
-
-AUDIT ANY PAGE
-• File size, pixel dimensions and how each image is displayed
-• Flags heavy, oversized and distorted images, and missing alt text
-• Savings are measured by really compressing each image, not guessed
-
-COMPRESS AS DROP-IN REPLACEMENTS
-• Same filename, format and dimensions; PNG is lossless
-• Preview JPEG and WebP before and after, and pick the quality
-• One image, or all of them into a ZIP or a folder you choose
-
-RESIZE FOR DISPLAY
-• 1x and 2x versions sized for each image's space, with srcset markup
-
-EXTRAS
-• Optional WebP copies and lossy PNG
-• Export the audit as CSV, JSON or Markdown
-
-PRIVATE BY DESIGN
-No accounts, analytics or tracking. Everything runs in your browser and files are saved only to your computer.
-```
+| Screenshots (1280×800) | The same three screenshots as Chrome |
+| Search terms (up to 7, 30 characters each, 21 words total) | `compress images`, `image size`, `image optimizer`, `webp`, `page speed`, `core web vitals`, `lcp` |
 
 **Notes for certification** (on the Submit page):
 
 ```
+Update from 3.4.1. This version changes the store description and adds a homepage link (homepage_url) to the project website. No permissions changed, and the extension works the same way.
+
 No account or sign-in is needed. To test: open any web page with images (or click "Playground" in the popup for a built-in test page), click the toolbar button, and the popup lists every image with its file size and dimensions. Click "Compress" on an image to save a smaller copy with the same filename; a Save-As dialog opens for the file. "Compress & Download All Compressible" saves a batch as one ZIP. "Resize" appears on images larger than their display size. The side panel button docks the same report in the Edge sidebar.
 
 The extension needs access to all sites because it audits whichever page the user chooses, and those images are often hosted on other domains (CDNs). Pages are scanned only when the user opens the extension or presses its shortcut, unless they turn on auto-scan. Nothing is sent anywhere; all processing happens locally.
 ```
 
-**Before you press Publish:**
-- [ ] `npm test` also passes in Edge: `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm test`
-- [ ] Loaded the ZIP contents unpacked in Edge once and clicked through: scan, compress, ZIP, resize, preview, side panel
-- [ ] Expect certification to take up to about a week
+## 5. Before you press Submit
+
+- [ ] GitHub Pages is on (Settings, Pages, Deploy from a branch, `main`, `/docs`) and https://r3hab-media.github.io/Image-Size-Checker-Pro/ and `/privacy.html` load
+- [ ] `npm test` passes, also in Edge: `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm test`
+- [ ] `npm run release` built the ZIP from `main`
+- [ ] Loaded the ZIP contents unpacked once in Chrome and once in Edge and clicked through: scan, compress one image, ZIP, resize, preview, side panel
+- [ ] Chrome: listing, privacy and distribution tabs filled in; no warnings shown in the dashboard
+- [ ] Edge: properties, privacy and store listing filled in; certification notes pasted
+- [ ] Expect review to take a few days on Chrome and up to seven business days on Edge
+
+## After it is published
+
+- Watch installs, weekly users and uninstalls under each store's analytics.
+- For each update: bump `version` in `manifest.json` and `package.json` (the stores reject a version they have already seen), add a `CHANGELOG.md` entry, run `npm test`, merge to `main`, run `npm run release`, and upload the released ZIP to both stores. Never upload a ZIP that has no release.

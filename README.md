@@ -2,6 +2,10 @@
 
 A Manifest V3 extension for Chrome and Microsoft Edge that audits the images on a page and compresses them as **drop-in replacements**: same file format, same pixel dimensions, same filename.
 
+- **Install:** [Chrome Web Store](https://chromewebstore.google.com/detail/image-size-checker-pro/ibcbajbelpfnngmeaelfbbojmocmacpa) · [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/image-size-checker-pro/kdcdiekcbloocageafpcpihkgddlenab)
+- **Website:** https://r3hab-media.github.io/Image-Size-Checker-Pro/
+- **What's new:** [CHANGELOG.md](CHANGELOG.md)
+
 ## What it checks
 
 For every `<img>`, CSS `background-image` and inline `<svg>` on the page:
@@ -87,7 +91,7 @@ For `file://` pages, enable **Allow access to file URLs** on the extension's det
 
 ## Privacy
 
-The extension has no servers, accounts, analytics or tracking. See [PRIVACY.md](PRIVACY.md).
+The extension has no servers, accounts, analytics or tracking. See [PRIVACY.md](PRIVACY.md), also published at https://r3hab-media.github.io/Image-Size-Checker-Pro/privacy.html.
 
 ## Known limitations
 

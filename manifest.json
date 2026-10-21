@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Image Size Checker Pro",
-  "version": "3.4.1",
-  "description": "Find heavy, oversized and distorted images on any page, then compress or resize them as drop-in replacements with the same filename.",
+  "version": "3.5.0",
+  "description": "Check image size and compress images for page speed. Shows measured savings. Files keep the same name, format and dimensions.",
   "permissions": [
     "scripting",
     "storage",
@@ -54,5 +54,6 @@
   "side_panel": {
     "default_path": "popup.html?panel=1"
   },
+  "homepage_url": "https://r3hab-media.github.io/Image-Size-Checker-Pro/",
   "minimum_chrome_version": "116"
 }
