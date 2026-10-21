@@ -1,7 +1,9 @@
 // Generates the store images in store/: 1280x800 screenshots, the 440x280 and 1400x560 promo tiles,
 // and the 300x300 logo that Edge Add-ons asks for (Chrome uses icons/icon128.png).
 // It loads the unpacked extension in Chrome, captures the real popup on the built-in playground,
-// and frames each capture with a caption. Set CHROME_PATH if Chrome is not in the default location.
+// and frames each capture with a caption. It then builds the project site's images in docs/img (see buildSiteImages).
+// Set CHROME_PATH if Chrome is not in the default location. Pass --site-only to skip the captures and
+// rebuild only docs/img from the committed store images.
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,6 +11,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'store');
+const SITE = path.join(ROOT, 'docs', 'img');
+// --site-only rebuilds the project site's images from the committed store images, without new captures.
+const SITE_ONLY = process.argv.includes('--site-only');
 const CHROME =
   process.env.CHROME_PATH ||
   {
@@ -36,6 +41,29 @@ const extId = await browser.installExtension(ROOT);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 fs.mkdirSync(OUT, { recursive: true });
 
+// Composes HTML into an image file.
+const stage = await browser.newPage();
+const b64 = (f) => 'data:image/png;base64,' + fs.readFileSync(f).toString('base64');
+const BASE = `${FONTS}
+  *{box-sizing:border-box;margin:0}
+  body{font-family:Rubik,sans-serif;color:#111;background:#eef0ff}
+  .sticker{border:3px solid #111;border-radius:16px;box-shadow:6px 6px 0 #111;overflow:hidden;background:#fff}
+  h1{font-size:46px;font-weight:800;line-height:1.08;letter-spacing:-0.02em}
+  p{font-size:21px;line-height:1.45;color:#3d3d52;margin-top:18px}
+  .tag{display:inline-block;padding:4px 14px;border:3px solid #111;border-radius:999px;font-weight:800;font-size:16px;margin-bottom:20px}`;
+
+async function compose(name, width, height, html, { transparent = false, dir = OUT } = {}) {
+  await stage.setViewport({ width, height, deviceScaleFactor: 1 });
+  await stage.setContent(`<style>${BASE}</style>${html}`);
+  await stage.evaluate(() => document.fonts.ready);
+  await sleep(200);
+  const file = path.join(dir, name);
+  await stage.screenshot({ path: file, omitBackground: transparent });
+  console.log(path.relative(ROOT, file).split(path.sep).join('/'));
+  return file;
+}
+
+if (!SITE_ONLY) {
 // The playground page, scanned, with on-page badges.
 const demo = await browser.newPage();
 await demo.setViewport({ width: 1280, height: 800 });
@@ -70,26 +98,6 @@ await demo.bringToFront();
 await sleep(800);
 const pageShot = path.join(OUT, '.capture-page.png');
 await demo.screenshot({ path: pageShot });
-
-// Compose the store images.
-const stage = await browser.newPage();
-const b64 = (f) => 'data:image/png;base64,' + fs.readFileSync(f).toString('base64');
-const BASE = `${FONTS}
-  *{box-sizing:border-box;margin:0}
-  body{font-family:Rubik,sans-serif;color:#111;background:#eef0ff}
-  .sticker{border:3px solid #111;border-radius:16px;box-shadow:6px 6px 0 #111;overflow:hidden;background:#fff}
-  h1{font-size:46px;font-weight:800;line-height:1.08;letter-spacing:-0.02em}
-  p{font-size:21px;line-height:1.45;color:#3d3d52;margin-top:18px}
-  .tag{display:inline-block;padding:4px 14px;border:3px solid #111;border-radius:999px;font-weight:800;font-size:16px;margin-bottom:20px}`;
-
-async function compose(name, width, height, html, { transparent = false } = {}) {
-  await stage.setViewport({ width, height, deviceScaleFactor: 1 });
-  await stage.setContent(`<style>${BASE}</style>${html}`);
-  await stage.evaluate(() => document.fonts.ready);
-  await sleep(200);
-  await stage.screenshot({ path: path.join(OUT, name), omitBackground: transparent });
-  console.log('store/' + name);
-}
 
 const shot = (img, tag, tagColor, title, body) => `
   <div style="width:1280px;height:800px;display:flex;align-items:center;gap:56px;padding:0 60px 0 70px">
@@ -166,4 +174,67 @@ await compose(
 );
 
 for (const f of [report, preview, pageShot]) fs.unlinkSync(f);
+}
+
+await buildSiteImages();
 await browser.close();
+
+// Project site images (docs/img): WebP copies of the store screenshots at three widths, the 1200x630
+// share image for Open Graph and X cards, and the logo. The share image goes through the extension's
+// own PNG optimizer, keeping the lossy result only when it is near-identical (36 dB PSNR).
+async function buildSiteImages() {
+  const { optimizePngLossless, optimizePngLossy } = await import('../js/png.js');
+  fs.mkdirSync(SITE, { recursive: true });
+  const kb = (n) => (n / 1024).toFixed(0) + ' KB';
+
+  await stage.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+  await stage.setContent('<p>encode</p>');
+  for (const name of ['screenshot-1-report', 'screenshot-2-preview', 'screenshot-3-page']) {
+    for (const width of [640, 960, 1280]) {
+      const webp = await stage.evaluate(async (src, width) => {
+        const img = new Image();
+        img.src = src;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = width;
+        c.height = Math.round((img.naturalHeight * width) / img.naturalWidth);
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(img, 0, 0, c.width, c.height);
+        return c.toDataURL('image/webp', 0.82).split(',')[1];
+      }, b64(path.join(OUT, name + '.png')), width);
+      const file = path.join(SITE, `${name}-${width}.webp`);
+      fs.writeFileSync(file, Buffer.from(webp, 'base64'));
+      console.log(`docs/img/${name}-${width}.webp ${kb(fs.statSync(file).size)}`);
+    }
+  }
+
+  const og = await compose(
+    'og-image.png',
+    1200,
+    630,
+    `<div style="width:1200px;height:630px;display:flex;align-items:center;gap:36px;padding:0 0 0 70px;background:#ffd43b;border:6px solid #111;overflow:hidden">
+       <div style="flex:1;min-width:0">
+         <div style="display:flex;align-items:center;gap:14px;margin-bottom:28px">
+           <img src="${fileUrl('icons/logo.svg')}" style="width:88px;height:88px;margin-left:-8px">
+           <div style="font-size:30px;font-weight:800;letter-spacing:-0.02em">Image Size Checker Pro</div>
+         </div>
+         <h1 style="font-size:54px">Compress images for page speed.</h1>
+         <p style="color:#111;font-size:25px">Measured savings. Same name, format and dimensions. For Chrome and Edge.</p>
+       </div>
+       <div class="sticker" style="width:560px;height:452px;flex-shrink:0;position:relative;transform:rotate(2deg);margin-right:-40px">
+         <img src="${b64(path.join(OUT, 'screenshot-1-report.png'))}" style="position:absolute;left:-353px;top:-75px;width:960px;height:600px;max-width:none">
+       </div>
+     </div>`,
+    { dir: SITE }
+  );
+  const raw = new Uint8Array(fs.readFileSync(og));
+  const lossless = await optimizePngLossless(raw);
+  const lossy = await optimizePngLossy(raw, { minPsnr: 36 });
+  const best = [raw, lossless, lossy?.bytes].filter(Boolean).reduce((a, b) => (b.length < a.length ? b : a));
+  fs.writeFileSync(og, best);
+  console.log(`docs/img/og-image.png ${kb(raw.length)} -> ${kb(best.length)}`);
+
+  fs.copyFileSync(path.join(ROOT, 'icons', 'logo.svg'), path.join(SITE, 'logo.svg'));
+  console.log('docs/img/logo.svg');
+}

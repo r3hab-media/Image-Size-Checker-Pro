@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Size Checker Pro: compress images for page speed</title>
+  <meta name="description" content="A browser extension for Chrome and Edge that finds heavy images on any page and compresses them. Savings are measured, and files keep the same name, format and dimensions.">
+  <link rel="canonical" href="https://r3hab-media.github.io/Image-Size-Checker-Pro/">
+  <link rel="icon" href="img/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Image Size Checker Pro">
+  <meta property="og:title" content="Image Size Checker Pro: compress images for page speed">
+  <meta property="og:description" content="Find heavy images on any page and compress them. Savings are measured, and files keep the same name, format and dimensions. For Chrome and Edge.">
+  <meta property="og:url" content="https://r3hab-media.github.io/Image-Size-Checker-Pro/">
+  <meta property="og:image" content="https://r3hab-media.github.io/Image-Size-Checker-Pro/img/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Image Size Checker Pro. Compress images for page speed. The popup shows 1.35 MB of achievable savings on a test page.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Image Size Checker Pro: compress images for page speed">
+  <meta name="twitter:description" content="Find heavy images on any page and compress them. Savings are measured, and files keep the same name, format and dimensions.">
+  <meta name="twitter:image" content="https://r3hab-media.github.io/Image-Size-Checker-Pro/img/og-image.png">
+  <meta name="twitter:image:alt" content="Image Size Checker Pro. Compress images for page speed. The popup shows 1.35 MB of achievable savings on a test page.">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./">
+        <img src="img/logo.svg" alt="" width="40" height="40">
+        Image Size Checker Pro
+      </a>
+      <a href="https://github.com/r3hab-media/Image-Size-Checker-Pro">Source on GitHub</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="hero wrap">
+      <h1>Find the heavy images on any page and compress them as drop-in replacements.</h1>
+      <p class="lead">A browser extension for Chrome and Edge. It measures savings by really compressing each image, and the files you save keep the same name, format and dimensions.</p>
+      <div class="installs">
+        <a class="btn" href="https://chromewebstore.google.com/detail/image-size-checker-pro/ibcbajbelpfnngmeaelfbbojmocmacpa">Add to Chrome</a>
+        <a class="btn alt" href="https://microsoftedge.microsoft.com/addons/detail/image-size-checker-pro/kdcdiekcbloocageafpcpihkgddlenab">Get it for Edge</a>
+      </div>
+      <figure class="shot">
+        <img
+          src="img/screenshot-1-report-1280.webp"
+          srcset="img/screenshot-1-report-640.webp 640w, img/screenshot-1-report-960.webp 960w, img/screenshot-1-report-1280.webp 1280w"
+          sizes="(min-width: 1040px) 1008px, calc(100vw - 32px)"
+          width="1280" height="800" fetchpriority="high"
+          alt="The extension's popup after scanning a test page. It lists 7 images weighing 1.62 MB in total, with 1.35 MB of achievable savings. The first image, product-feature.jpg, is 946 KB, and compression can save 762 KB of it.">
+      </figure>
+    </div>
+
+    <section aria-labelledby="what">
+      <div class="wrap">
+        <h2 id="what">What it does</h2>
+        <p class="lead">Heavy images slow down page loads and hurt LCP and Core Web Vitals. Image Size Checker Pro shows which images are too big, by how much, and fixes them without changing your markup.</p>
+        <ul class="cards">
+          <li class="card">
+            <span class="tag">Audit</span>
+            <h3>See what every image weighs</h3>
+            <ul>
+              <li>File size, pixel dimensions and displayed size</li>
+              <li>Flags heavy, oversized and stretched images, and missing alt text</li>
+              <li>Flags missing width and height, and lazy loading above the fold</li>
+              <li>Badges on the page, or a report in the popup or side panel</li>
+            </ul>
+          </li>
+          <li class="card">
+            <span class="tag green">Compress</span>
+            <h3>Smaller files, same name and format</h3>
+            <ul>
+              <li>Savings are measured, not guessed</li>
+              <li>PNG compression is lossless and pixel-exact</li>
+              <li>JPEG and WebP keep high quality, with a before and after preview</li>
+              <li>One image at a time, or all of them into a ZIP or a folder</li>
+            </ul>
+          </li>
+          <li class="card">
+            <span class="tag pink">Resize</span>
+            <h3>Sized for how images are shown</h3>
+            <ul>
+              <li>1x and 2x versions for the space each image fills</li>
+              <li>Ready-to-paste srcset markup</li>
+              <li>Optional WebP copies with picture markup</li>
+              <li>Export the audit as CSV, JSON or Markdown</li>
+            </ul>
+          </li>
+        </ul>
+
+        <div class="figures">
+          <figure class="shot">
+            <img
+              src="img/screenshot-2-preview-960.webp"
+              srcset="img/screenshot-2-preview-640.webp 640w, img/screenshot-2-preview-960.webp 960w, img/screenshot-2-preview-1280.webp 1280w"
+              sizes="(min-width: 1040px) 490px, (min-width: 680px) calc(50vw - 30px), calc(100vw - 36px)"
+              width="1280" height="800" loading="lazy" decoding="async"
+              alt="The before and after preview for product-feature.jpg, with a split slider over the image and a quality slider set to 92. Saving at quality 92 takes the file from 946 KB to 183 KB.">
+            <figcaption>Compare before and after, pick the quality, and save a file with the same name.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img
+              src="img/screenshot-3-page-960.webp"
+              srcset="img/screenshot-3-page-640.webp 640w, img/screenshot-3-page-960.webp 960w, img/screenshot-3-page-1280.webp 1280w"
+              sizes="(min-width: 1040px) 490px, (min-width: 680px) calc(50vw - 30px), calc(100vw - 36px)"
+              width="1280" height="800" loading="lazy" decoding="async"
+              alt="A test page with a badge on each image showing its file size and displayed size, such as 946 KB at 280 by 158. Heavy and distorted images have red outlines.">
+            <figcaption>Badges on the page show each image's weight and the space it fills.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="new">
+      <div class="wrap">
+        <h2 id="new">What's new in 3.5.0</h2>
+        <div class="news">
+          <p>Image Size Checker Pro now has a project website with screenshots, install links, the changelog and the privacy policy. The store listing explains more clearly what makes it different: savings are measured by really compressing each image, and you get files with the same name, format and dimensions. How the extension works is unchanged, and your settings carry over.</p>
+          <p><a href="https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/CHANGELOG.md">Read the full changelog</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="privacy">
+      <div class="wrap">
+        <h2 id="privacy">Private by design</h2>
+        <p class="lead">No accounts, analytics or tracking. Pages are scanned only when you ask, everything runs in your browser, and files are saved only to your computer. <a href="privacy.html">Read the privacy policy</a>.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="install">
+      <div class="wrap hero">
+        <h2 id="install">Install</h2>
+        <div class="installs">
+          <a class="btn" href="https://chromewebstore.google.com/detail/image-size-checker-pro/ibcbajbelpfnngmeaelfbbojmocmacpa">Add to Chrome</a>
+          <a class="btn alt" href="https://microsoftedge.microsoft.com/addons/detail/image-size-checker-pro/kdcdiekcbloocageafpcpihkgddlenab">Get it for Edge</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <ul>
+        <li><a href="privacy.html">Privacy policy</a></li>
+        <li><a href="https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/CHANGELOG.md">Changelog</a></li>
+        <li><a href="https://github.com/r3hab-media/Image-Size-Checker-Pro">GitHub repository</a></li>
+        <li><a href="https://github.com/r3hab-media/Image-Size-Checker-Pro/issues">Report a problem</a></li>
+      </ul>
+      <p class="muted">Image Size Checker Pro is free, and its source code is on GitHub. This site uses no cookies, analytics or third-party scripts.</p>
+    </div>
+  </footer>
+</body>
+</html>
