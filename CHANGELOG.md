@@ -10,7 +10,9 @@ Image Size Checker Pro now has a project website with screenshots, install links
 - The extension's details page links to the website.
 - The privacy policy link in settings opens the website's copy of the policy.
 - Shorter, clearer store description.
+- Fixed: the side panel no longer shows its own "Side panel" button.
 - No new permissions.
+- A Firefox version is built from the same code and will be submitted to Firefox Add-ons.
 
 ## 3.4.1 (October 19, 2026)
 

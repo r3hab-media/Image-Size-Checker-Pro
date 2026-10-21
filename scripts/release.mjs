@@ -1,6 +1,6 @@
 // Publishes a GitHub Release for the version in manifest.json: builds the store ZIP from main,
 // tags that commit v<version>, and attaches the ZIP, so every store upload is recorded with the
-// exact code it came from. Upload the ZIP this prints to both stores.
+// exact code it came from. Upload the main ZIP to Chrome and Edge, and the -firefox ZIP to Firefox Add-ons.
 // Extra arguments go to `gh release create`, e.g. npm run release -- --notes "One-line summary".
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -28,11 +28,12 @@ if (run('git', ['tag', '--list', tag])) fail(`${tag} already exists; bump the ve
 // The package script checks the manifest and refuses uncommitted runtime files.
 execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'package.mjs')], { cwd: ROOT, stdio: 'inherit' });
 const zip = path.join('dist', `image-size-checker-pro-${version}.zip`);
+const firefoxZip = path.join('dist', `image-size-checker-pro-${version}-firefox.zip`);
 
 execFileSync(
   'gh',
-  ['release', 'create', tag, zip, '--target', head, '--title', version, '--generate-notes', ...process.argv.slice(2)],
+  ['release', 'create', tag, zip, firefoxZip, '--target', head, '--title', version, '--generate-notes', ...process.argv.slice(2)],
   { cwd: ROOT, stdio: 'inherit' }
 );
 run('git', ['fetch', '--quiet', '--tags', 'origin']);
-console.log(`\nReleased ${tag} at ${head.slice(0, 7)}. Upload ${zip} to the Chrome Web Store and Edge Add-ons.`);
+console.log(`\nReleased ${tag} at ${head.slice(0, 7)}. Upload ${zip} to the Chrome Web Store and Edge Add-ons, and ${firefoxZip} to Firefox Add-ons.`);

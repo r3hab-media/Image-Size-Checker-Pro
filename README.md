@@ -1,8 +1,9 @@
 # Image Size Checker Pro
 
-A Manifest V3 extension for Chrome and Microsoft Edge that audits the images on a page and compresses them as **drop-in replacements**: same file format, same pixel dimensions, same filename.
+A Manifest V3 extension for Chrome, Microsoft Edge and Firefox that audits the images on a page and compresses them as **drop-in replacements**: same file format, same pixel dimensions, same filename.
 
 - **Install:** [Chrome Web Store](https://chromewebstore.google.com/detail/image-size-checker-pro/ibcbajbelpfnngmeaelfbbojmocmacpa) · [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/image-size-checker-pro/kdcdiekcbloocageafpcpihkgddlenab)
+- **Firefox:** built from the same code (`npm run package`), not listed on Firefox Add-ons yet.
 - **Website:** https://r3hab-media.github.io/Image-Size-Checker-Pro/
 - **What's new:** [CHANGELOG.md](CHANGELOG.md)
 
@@ -83,11 +84,23 @@ CSS backgrounds get `image-set()` with `type()` entries. Even an already-optimal
 
 For `file://` pages, enable **Allow access to file URLs** on the extension's details page.
 
+## Load locally in Firefox
+
+Run `npm run package`, open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on** and pick `dist/firefox/manifest.json`. It stays loaded until Firefox restarts. Firefox 140 or later is needed.
+
+The Firefox build is the same code with a generated manifest (`scripts/firefox-manifest.mjs`). What differs:
+
+- **Saving:** Firefox has no folder access API, so **Choose Folder** is hidden and every file goes through the Save-As dialog.
+- **Side panel:** the side panel button opens the Firefox sidebar.
+- **Shortcuts:** set in the Add-ons Manager (Manage Extension Shortcuts).
+- **Background jobs:** Firefox has no offscreen documents. `js/offscreen-shim.js` runs `offscreen.html` in a hidden iframe in the background page instead.
+- **Downloads:** Firefox refuses `data:` URLs in its downloads API, so the background page saves through `blob:` URLs.
+
 ## Development
 
 `npm install` then `npm test` runs the test suite in your installed Chrome (set `CHROME_PATH` if it is not in the default location; `HEADFUL=1` shows the browser). To run it in Edge, point `CHROME_PATH` at Edge, for example `CHROME_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm test`. The tests load the unpacked extension and cover the compression engine (including pixel-exact PNG checks against Chrome's own decoder), scanning, the overlay, settings, and batch ZIP export.
 
-`npm run package` builds the store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. The same ZIP goes to the Chrome Web Store and Edge Add-ons. `npm run release` (on `main`, pushed) builds it, tags the commit `v<version>` and publishes a GitHub Release with the ZIP attached; every store upload should come from a release. `node scripts/store-assets.mjs` regenerates the store screenshots, promo tiles and Edge's 300×300 logo in `store/`. It also builds the project site's images in `docs/img/` (WebP screenshots and the 1200×630 share image); `node scripts/store-assets.mjs --site-only` rebuilds just those from the committed store images.
+`npm run package` builds the store upload, `dist/image-size-checker-pro-<version>.zip`, from committed runtime files only. The same ZIP goes to the Chrome Web Store and Edge Add-ons. It also builds `dist/image-size-checker-pro-<version>-firefox.zip` for Firefox Add-ons, plus the unpacked `dist/firefox/`. `npm run test:firefox` installs that build in Firefox (set `FIREFOX_PATH` if it is not in the default location) and checks scanning, measured savings, the Firefox UI and downloads. `npm run release` (on `main`, pushed) builds it, tags the commit `v<version>` and publishes a GitHub Release with both ZIPs attached; every store upload should come from a release. `node scripts/store-assets.mjs` regenerates the store screenshots, promo tiles and Edge's 300×300 logo in `store/`. It also builds the project site's images in `docs/img/` (WebP screenshots and the 1200×630 share image); `node scripts/store-assets.mjs --site-only` rebuilds just those from the committed store images.
 
 The project site is plain HTML and CSS in `docs/`, served by GitHub Pages from `main` `/docs`. It has no build step and no scripts. `docs/privacy.html` must carry the same text as `PRIVACY.md`; `npm test` checks this. The listing text, permission justifications and submission checklists for both stores are in [store/LISTING.md](store/LISTING.md).
 
