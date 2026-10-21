@@ -75,7 +75,7 @@ export const tests = {
     });
     await popup.close();
     if (!link) throw new Error('no privacy link in settings');
-    if (link.href !== 'https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/PRIVACY.md') throw new Error('href ' + link.href);
+    if (link.href !== 'https://r3hab-media.github.io/Image-Size-Checker-Pro/privacy.html') throw new Error('href ' + link.href);
     if (link.target !== '_blank' || !link.rel.includes('noopener')) throw new Error('link ' + JSON.stringify(link));
   }
 };
