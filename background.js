@@ -114,6 +114,15 @@ async function fetchImageMeta(url) {
   return { ok: false, fileSize: 0, mimeType: inferMimeFromUrl(url) };
 }
 
+// Firefox refuses data: URLs in downloads.download. Its background is a page, so it gets a blob: URL
+// instead, released once the download has finished. Chrome's service worker has no
+// URL.createObjectURL and accepts data: URLs, so it keeps them.
+async function downloadableUrl(url) {
+  if (!url.startsWith('data:') || typeof URL.createObjectURL !== 'function') return { url, release() {} };
+  const blobUrl = URL.createObjectURL(await (await fetch(url)).blob());
+  return { url: blobUrl, release: () => setTimeout(() => URL.revokeObjectURL(blobUrl), 1000) };
+}
+
 // Resolves once the user has saved or cancelled, so callers can report what really happened.
 function waitForDownload(downloadId) {
   return new Promise((resolve) => {
@@ -153,22 +162,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'TRIGGER_NATIVE_DOWNLOAD') {
     // Runs here rather than in the popup because the Save-As dialog can close the popup.
-    chrome.downloads.download(
-      {
-        url: message.dataUrl,
-        filename: message.filename,
-        saveAs: message.saveAs !== false,
-        conflictAction: 'uniquify'
-      },
-      (downloadId) => {
-        if (chrome.runtime.lastError || downloadId === undefined) {
-          const error = chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Download failed';
-          sendResponse({ ok: false, cancelled: /cancel/i.test(error), error });
-        } else {
-          waitForDownload(downloadId).then(sendResponse);
-        }
-      }
-    );
+    downloadableUrl(message.dataUrl)
+      .then(({ url, release }) =>
+        chrome.downloads.download(
+          {
+            url,
+            filename: message.filename,
+            saveAs: message.saveAs !== false,
+            conflictAction: 'uniquify'
+          },
+          (downloadId) => {
+            if (chrome.runtime.lastError || downloadId === undefined) {
+              release();
+              const error = chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Download failed';
+              sendResponse({ ok: false, cancelled: /cancel/i.test(error), error });
+            } else {
+              waitForDownload(downloadId).then((result) => {
+                release();
+                sendResponse(result);
+              });
+            }
+          }
+        )
+      )
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
     return true;
   }
 
@@ -240,7 +257,8 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 // The toolbar button opens the 750px popup; the side panel is opened from its "Side panel" button.
 // This setting persists, so it must be switched back off for installs that had it on.
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+// Firefox has no sidePanel API (it uses sidebar_action), so skip it there.
+if (chrome.sidePanel) chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 
 // ---------- background compression jobs (run in an offscreen document) ----------
 

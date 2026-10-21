@@ -136,6 +136,19 @@ export const tests = {
       }
     }
     await demo.close();
+  },
+
+  'the side panel hides its own "Side panel" button; the popup shows it and Choose Folder': async (ctx) => {
+    const display = (page, id) => page.evaluate((i) => getComputedStyle(document.getElementById(i)).display, id);
+    const panel = await panelPage(ctx);
+    const inPanel = await display(panel, 'openPanelBtn');
+    await panel.close();
+    const popup = await ctx.browser.newPage();
+    await popup.goto(`chrome-extension://${ctx.extId}/popup.html`);
+    const [inPopup, folder] = [await display(popup, 'openPanelBtn'), await display(popup, 'chooseFolderBtn')];
+    await popup.close();
+    if (inPanel !== 'none') throw new Error('side panel shows the side panel button: ' + inPanel);
+    if (inPopup === 'none' || folder === 'none') throw new Error(`popup buttons: panel ${inPopup}, folder ${folder}`);
   }
 };
 
