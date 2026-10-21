@@ -97,3 +97,7 @@ The extension has no servers, accounts, analytics or tracking. See [PRIVACY.md](
 ## Credits
 
 The popup uses [Rubik](https://github.com/googlefonts/rubik) and [Space Mono](https://github.com/googlefonts/spacemono), bundled in `fonts/` under the SIL Open Font License 1.1 (see `fonts/*-OFL.txt`).
+
+## License
+
+MIT. See [LICENSE](LICENSE). The bundled fonts keep their own SIL Open Font License 1.1.
