@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy: Image Size Checker Pro</title>
+  <meta name="description" content="Image Size Checker Pro does not collect, sell or share any personal data. It has no servers, no accounts, no analytics and no tracking.">
+  <link rel="canonical" href="https://r3hab-media.github.io/Image-Size-Checker-Pro/privacy.html">
+  <link rel="icon" href="img/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Privacy Policy: Image Size Checker Pro">
+  <meta property="og:url" content="https://r3hab-media.github.io/Image-Size-Checker-Pro/privacy.html">
+  <meta property="og:image" content="https://r3hab-media.github.io/Image-Size-Checker-Pro/img/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./">
+        <img src="img/logo.svg" alt="" width="40" height="40">
+        Image Size Checker Pro
+      </a>
+      <a href="./">Home</a>
+    </div>
+  </header>
+
+  <main id="main" class="wrap prose">
+    <!-- Keep this text in sync with PRIVACY.md; npm test checks that every paragraph matches. -->
+    <h1>Privacy Policy: Image Size Checker Pro</h1>
+    <p>Last updated: October 17, 2026</p>
+    <p>Image Size Checker Pro is a browser extension that measures the images on web pages and creates smaller copies of them. This policy explains what the extension accesses and what it does with it.</p>
+
+    <h2>The short version</h2>
+    <p>The extension does not collect, sell or share any personal data. It has no servers, no accounts, no analytics and no tracking. Everything it does happens in your browser, and everything it creates is saved to your own computer.</p>
+
+    <h2>What the extension accesses, and why</h2>
+    <p><strong>The images on pages you scan.</strong> When you open the extension (or press its keyboard shortcut, or turn on "Auto-scan every page I visit"), it reads the images on the current page: their addresses, file names, dimensions, alt text and how they are displayed. This is used only to show you the report in the extension and the badges on the page.</p>
+    <p><strong>The image files themselves.</strong> To measure each image's file size and to compress or resize it, the extension downloads the image from the website that hosts it, the same way the page itself loads it. If a site only serves an image to signed-in visitors, the extension retries the request with your browser's existing cookies for that site so it can read the image. These requests go only to the sites that host the images. Nothing is sent anywhere else.</p>
+    <p><strong>Your settings.</strong> Your preferences (size limit, overlay mode and similar options) are stored with the browser's extension storage on your computer. Temporary results, such as measured savings, are kept only for the current browser session.</p>
+    <p><strong>Your chosen folder.</strong> If you pick a folder to save compressed images into, the browser stores a reference to that folder on your computer so the extension can save there again. You can switch back to the Save-As dialog at any time.</p>
+    <p><strong>Downloads.</strong> Compressed and resized images, ZIP files and reports (CSV, JSON, Markdown) are saved only to your computer, where you choose.</p>
+
+    <h2>What the extension does not do</h2>
+    <ul>
+      <li>It does not send page content, image files, browsing history or any other data to the developer or to any third party.</li>
+      <li>It does not use analytics, advertising or tracking code.</li>
+      <li>It does not load code from the internet; all of its code ships inside the extension.</li>
+      <li>It does not sell or transfer data, and does not use data for anything other than the features described above.</li>
+    </ul>
+
+    <h2>Permissions</h2>
+    <ul>
+      <li><strong>Access to all websites:</strong> needed to read images on whatever page you scan, and to fetch image files from any site or image host (such as a CDN) to measure and compress them.</li>
+      <li><strong>scripting:</strong> adds the image scanner to the current tab when you open the extension.</li>
+      <li><strong>storage:</strong> saves your settings on your computer.</li>
+      <li><strong>downloads:</strong> saves compressed images, ZIP files and reports to your computer.</li>
+      <li><strong>sidePanel:</strong> lets you open the extension in the browser's side panel.</li>
+      <li><strong>offscreen:</strong> runs image compression in the background so it keeps going if you close the popup.</li>
+    </ul>
+
+    <h2>Changes to this policy</h2>
+    <p>If the extension's handling of data changes, this policy will be updated and the "Last updated" date changed. A change that adds any data collection would be described in the extension's release notes before it ships.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy: open an issue at <a href="https://github.com/r3hab-media/Image-Size-Checker-Pro/issues">https://github.com/r3hab-media/Image-Size-Checker-Pro/issues</a></p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <ul>
+        <li><a href="./">Home</a></li>
+        <li><a href="https://github.com/r3hab-media/Image-Size-Checker-Pro/blob/main/CHANGELOG.md">Changelog</a></li>
+        <li><a href="https://github.com/r3hab-media/Image-Size-Checker-Pro">GitHub repository</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

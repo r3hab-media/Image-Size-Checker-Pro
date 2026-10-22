@@ -5,13 +5,17 @@ import { getFolder, clearFolder } from './js/folder-store.js';
 // The side panel loads popup.html?panel=1; the toolbar popup is a fixed 750px wide.
 const IS_PANEL = new URLSearchParams(location.search).has('panel');
 if (IS_PANEL) document.documentElement.classList.add('panel');
-// The same package ships to Chrome and Edge; name the right browser where the user has to find one of
-// its pages. Edge redirects chrome:// links, but its users know them as edge://.
+// The same code ships to Chrome, Edge and Firefox; name the right browser where the user has to find
+// one of its pages. Edge redirects chrome:// links, but its users know them as edge://.
+const IS_FIREFOX = /\bFirefox\//.test(navigator.userAgent);
 const IS_EDGE =
-  navigator.userAgentData?.brands?.some((b) => b.brand === 'Microsoft Edge') ?? /\bEdg\//.test(navigator.userAgent);
-const BROWSER_NAME = IS_EDGE ? 'Edge' : 'Chrome';
+  !IS_FIREFOX && (navigator.userAgentData?.brands?.some((b) => b.brand === 'Microsoft Edge') ?? /\bEdg\//.test(navigator.userAgent));
+const BROWSER_NAME = IS_FIREFOX ? 'Firefox' : IS_EDGE ? 'Edge' : 'Chrome';
 const BROWSER_SCHEME = IS_EDGE ? 'edge' : 'chrome';
-const STORE_NAME = IS_EDGE ? 'Edge Add-ons' : 'Chrome Web Store';
+const INTERNAL_PAGES = IS_FIREFOX ? '<code>about:</code>' : `<code>${BROWSER_SCHEME}://</code>`;
+const STORE_NAME = IS_FIREFOX ? 'Firefox Add-ons' : IS_EDGE ? 'Edge Add-ons' : 'Chrome Web Store';
+// Firefox has no File System Access API, so it always saves through the Save-As dialog.
+const CAN_PICK_FOLDER = typeof window.showDirectoryPicker === 'function';
 // Must match CONTENT_VERSION in content.js.
 const EXPECTED_CONTENT_VERSION = 2;
 
@@ -262,7 +266,7 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
     els.pageHostLabel.textContent = 'Restricted browser page';
     els.itemsList.innerHTML = `
       <div class="empty-state">
-        ${BROWSER_NAME} blocks extensions from running on internal <code>${BROWSER_SCHEME}://</code> or ${STORE_NAME} pages.
+        ${BROWSER_NAME} blocks extensions from running on internal ${INTERNAL_PAGES} or ${STORE_NAME} pages.
         For local <code>file://</code> pages, enable “Allow access to file URLs” on the extension’s details page.<br/><br/>
         Click <strong>Playground</strong> above to open the built-in test page and try 1-click and ZIP image compression!
       </div>`;
@@ -645,6 +649,7 @@ async function refreshFolderLabel() {
   }
 }
 
+els.chooseFolderBtn.hidden = !CAN_PICK_FOLDER;
 els.chooseFolderBtn.addEventListener('click', () => {
   // The native picker would close this popup, so it runs in its own small window.
   chrome.windows.create({ url: chrome.runtime.getURL('folder.html'), type: 'popup', width: 480, height: 260 });
@@ -688,6 +693,12 @@ els.rescanBtn.addEventListener('click', () => ensureAndScan(true, activeTabId));
 
 els.openPanelBtn.hidden = IS_PANEL;
 els.openPanelBtn.addEventListener('click', async () => {
+  // Firefox: the sidebar must open synchronously inside the click, before any await.
+  if (!chrome.sidePanel && globalThis.browser?.sidebarAction) {
+    browser.sidebarAction.open();
+    window.close();
+    return;
+  }
   const win = await chrome.windows.getCurrent();
   await chrome.sidePanel.open({ windowId: win.id });
   window.close();
@@ -896,7 +907,9 @@ window.__iscPopup = { ensureAndScan, getState: () => currentState, compressAllTo
 function showStaleBanner(stale) {
   els.staleBanner.classList.toggle('hidden', !stale);
   els.staleBanner.textContent = stale
-    ? `This tab is running an older copy of the extension, so some numbers may be missing. Open ${BROWSER_SCHEME}://extensions, click Reload on Image Size Checker Pro, then refresh this page.`
+    ? IS_FIREFOX
+      ? 'This tab is running an older copy of the extension, so some numbers may be missing. Refresh this page.'
+      : `This tab is running an older copy of the extension, so some numbers may be missing. Open ${BROWSER_SCHEME}://extensions, click Reload on Image Size Checker Pro, then refresh this page.`
     : '';
 }
 
@@ -964,9 +977,14 @@ async function renderShortcuts() {
   shortcutEls.toggleLabel.title = 'Show or hide the on-page image badges' + (toggle ? ` (${toggle})` : '');
 }
 
-shortcutEls.btn.addEventListener('click', () => chrome.tabs.create({ url: SHORTCUTS_PAGE }));
+// Firefox keeps shortcuts in the Add-ons Manager, which only this API can open.
+shortcutEls.btn.addEventListener('click', () =>
+  chrome.commands.openShortcutSettings ? chrome.commands.openShortcutSettings() : chrome.tabs.create({ url: SHORTCUTS_PAGE })
+);
 // Chrome has no event for shortcut changes; the side panel stays open, so re-read on return.
 window.addEventListener('focus', renderShortcuts);
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && renderShortcuts());
-shortcutEls.btn.title = `Choose a keyboard shortcut on ${BROWSER_NAME}'s shortcuts page`;
+shortcutEls.btn.title = IS_FIREFOX
+  ? 'Choose a keyboard shortcut in the Firefox Add-ons Manager'
+  : `Choose a keyboard shortcut on ${BROWSER_NAME}'s shortcuts page`;
 renderShortcuts();
