@@ -258,9 +258,13 @@ chrome.commands.onCommand.addListener(async (command) => {
 // The toolbar button opens the 750px popup; the side panel is opened from its "Side panel" button.
 // This setting persists, so it must be switched back off for installs that had it on.
 // Firefox has no sidePanel API (it uses sidebar_action), so skip it there.
-if (chrome.sidePanel) chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+const sidePanel = chrome.sidePanel;
+if (sidePanel) sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 
 // ---------- background compression jobs (run in an offscreen document) ----------
+
+// In Firefox this is the hidden-iframe stand-in from js/offscreen-shim.js, which loads first.
+const offscreen = chrome.offscreen;
 
 let creatingOffscreen = null;
 let closingOffscreen = null;
@@ -272,8 +276,8 @@ async function ensureOffscreen() {
   // closing; wait out both so work is never sent to a document that cannot receive it.
   if (creatingOffscreen) return creatingOffscreen;
   if (closingOffscreen) await closingOffscreen;
-  if (await chrome.offscreen.hasDocument()) return;
-  creatingOffscreen ??= chrome.offscreen
+  if (await offscreen.hasDocument()) return;
+  creatingOffscreen ??= offscreen
     .createDocument({
       url: 'offscreen.html',
       reasons: ['WORKERS', 'BLOBS'],
@@ -304,7 +308,7 @@ async function sendToOffscreen(message) {
 
 function closeOffscreenIfIdle() {
   if (activeJobs > 0 || pendingEstimates > 0 || creatingOffscreen || closingOffscreen) return;
-  closingOffscreen = chrome.offscreen
+  closingOffscreen = offscreen
     .closeDocument()
     .catch(() => {})
     .finally(() => {

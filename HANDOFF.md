@@ -34,7 +34,7 @@ Store links:
 - **Tests:**
   - `npm test`: 96/96 in Chrome
   - `npm run test:firefox`: 5/5 in Firefox 158
-  - `web-ext lint` on the Firefox build: 0 errors, 9 warnings (explained in the reviewer notes in `store/LISTING.md`)
+  - `web-ext lint` on the Firefox build: 0 errors, 0 warnings (AMO flagged 10 on the first upload: innerHTML, sidePanel/offscreen calls and the Android minimum; fixed on `fix/firefox-lint-warnings`)
 - **Permissions are unchanged from 3.4.1** in the Chrome and Edge manifest. There's no storage key change and no migration.
 - **GitHub Pages is on, but serving `main` from `/` (root).** It must be switched to `main` `/docs` once #20 and #21 are merged, or the site URL will show the README instead of the landing page.
 

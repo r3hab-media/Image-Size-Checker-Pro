@@ -246,7 +246,7 @@ No account or sign-in is needed. To test: open any web page with images (or clic
 
 The code is not minified, bundled or transpiled. It is the runtime files of https://github.com/r3hab-media/Image-Size-Checker-Pro at tag v3.5.0. The Firefox manifest is generated from manifest.json by scripts/firefox-manifest.mjs.
 
-Firefox has no offscreen API, so js/offscreen-shim.js (loaded before background.js) loads offscreen.html in a hidden iframe in the background page. Image compression runs there in a module worker. The references to chrome.sidePanel and chrome.offscreen that the linter flags are guarded or provided by that shim. The innerHTML assignments in content.js and popup.js escape every value that comes from the page with escapeHtml().
+Firefox has no offscreen API, so js/offscreen-shim.js (loaded before background.js) loads offscreen.html in a hidden iframe in the background page. Image compression runs there in a module worker. The Chrome-only chrome.sidePanel API is feature-detected and never called in Firefox. The UI is built with createElement and text nodes, with no innerHTML, so values from the scanned page are never parsed as HTML.
 
 The extension needs access to all sites because it audits whichever page the user chooses, and those images are often hosted on other domains (CDNs). Nothing is sent anywhere; all processing happens locally.
 ```

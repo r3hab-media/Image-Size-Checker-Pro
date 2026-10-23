@@ -6,8 +6,12 @@
 // - offscreen and sidePanel permissions do not exist in Firefox.
 // - browser_specific_settings.gecko: the add-on ID (permanent once published on AMO) and the
 //   data collection declaration that AMO requires for new add-ons (Firefox 140+).
+// - browser_specific_settings.gecko_android: the add-on is desktop only, but without this key AMO applies
+//   the desktop minimum to Firefox for Android too, and Android only supports data_collection_permissions
+//   from 142.
 export const FIREFOX_ID = 'image-size-checker-pro@r3hab-media.github.io';
 export const FIREFOX_MIN_VERSION = '140.0';
+export const FIREFOX_ANDROID_MIN_VERSION = '142.0';
 export const FIREFOX_ONLY_FILES = ['js/offscreen-shim.js'];
 
 export function firefoxManifest(manifest) {
@@ -29,7 +33,8 @@ export function firefoxManifest(manifest) {
       id: FIREFOX_ID,
       strict_min_version: FIREFOX_MIN_VERSION,
       data_collection_permissions: { required: ['none'] }
-    }
+    },
+    gecko_android: { strict_min_version: FIREFOX_ANDROID_MIN_VERSION }
   };
   return m;
 }
