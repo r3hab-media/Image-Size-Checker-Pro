@@ -12,7 +12,7 @@ const IS_EDGE =
   !IS_FIREFOX && (navigator.userAgentData?.brands?.some((b) => b.brand === 'Microsoft Edge') ?? /\bEdg\//.test(navigator.userAgent));
 const BROWSER_NAME = IS_FIREFOX ? 'Firefox' : IS_EDGE ? 'Edge' : 'Chrome';
 const BROWSER_SCHEME = IS_EDGE ? 'edge' : 'chrome';
-const INTERNAL_PAGES = IS_FIREFOX ? '<code>about:</code>' : `<code>${BROWSER_SCHEME}://</code>`;
+const INTERNAL_SCHEME = IS_FIREFOX ? 'about:' : `${BROWSER_SCHEME}://`;
 const STORE_NAME = IS_FIREFOX ? 'Firefox Add-ons' : IS_EDGE ? 'Edge Add-ons' : 'Chrome Web Store';
 // Firefox has no File System Access API, so it always saves through the Save-As dialog.
 const CAN_PICK_FOLDER = typeof window.showDirectoryPicker === 'function';
@@ -78,13 +78,20 @@ const els = {
   exportJsonBtn: document.getElementById('exportJsonBtn')
 };
 
-function escapeHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+// Builds an element. Attribute values and string children are set as plain data, never parsed as HTML,
+// so values from the scanned page (filenames, URLs, alt text) are safe here. Null, false and '' children
+// are skipped and arrays are flattened.
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value != null && value !== false) node.setAttribute(name, value);
+  }
+  node.append(...children.flat().filter((c) => c != null && c !== false && c !== ''));
+  return node;
+}
+
+function showEmptyState(...content) {
+  els.itemsList.replaceChildren(el('div', { class: 'empty-state' }, ...content));
 }
 
 function formatBytes(bytes) {
@@ -239,14 +246,14 @@ function resetDashboard() {
   els.tooLargeCountBadge.textContent = '0';
   els.compressAllZipBtn.disabled = true;
   els.compressionStatus.textContent = '';
-  els.itemsList.innerHTML = `<div class="empty-state">Scanning images on this page...</div>`;
+  showEmptyState('Scanning images on this page...');
 }
 
 async function ensureAndScan(forceRescan = false, tabId = null) {
   if (!tabId) {
     const tab = await getActiveTab();
     if (!tab || !tab.id) {
-      els.itemsList.innerHTML = `<div class="empty-state">No active tab detected.</div>`;
+      showEmptyState('No active tab detected.');
       return;
     }
     tabId = tab.id;
@@ -264,19 +271,25 @@ async function ensureAndScan(forceRescan = false, tabId = null) {
 
   if (!ensureResp.ok) {
     els.pageHostLabel.textContent = 'Restricted browser page';
-    els.itemsList.innerHTML = `
-      <div class="empty-state">
-        ${BROWSER_NAME} blocks extensions from running on internal ${INTERNAL_PAGES} or ${STORE_NAME} pages.
-        For local <code>file://</code> pages, enable “Allow access to file URLs” on the extension’s details page.<br/><br/>
-        Click <strong>Playground</strong> above to open the built-in test page and try 1-click and ZIP image compression!
-      </div>`;
+    showEmptyState(
+      `${BROWSER_NAME} blocks extensions from running on internal `,
+      el('code', {}, INTERNAL_SCHEME),
+      ` or ${STORE_NAME} pages. For local `,
+      el('code', {}, 'file://'),
+      ' pages, enable “Allow access to file URLs” on the extension’s details page.',
+      el('br'),
+      el('br'),
+      'Click ',
+      el('strong', {}, 'Playground'),
+      ' above to open the built-in test page and try 1-click and ZIP image compression!'
+    );
     return;
   }
 
   const state = await sendToTab(tabId, { type: forceRescan ? 'SCAN_PAGE' : 'GET_STATE' });
   if (tabId !== activeTabId) return;
   if (!state || !state.ok) {
-    els.itemsList.innerHTML = `<div class="empty-state">Unable to read page images. Click Scan to retry.</div>`;
+    showEmptyState('Unable to read page images. Click Scan to retry.');
     return;
   }
 
@@ -349,35 +362,40 @@ function filterAndSortItems(items) {
   return filtered;
 }
 
-function resizeResultHtml(item, info) {
-  if (!info || !info.variants) return '';
-  const files = info.variants.map((v) => `${escapeHtml(v.name)} (${v.width}×${v.height}, ${formatBytes(v.bytes)})`).join(' · ');
-  return `<div class="resize-result">
-      📐 Created ${files}
-      ${snippetHtml(`resize|${item.url}`, info.snippet)}
-    </div>`;
+function resizeResult(item, info) {
+  if (!info || !info.variants) return null;
+  const files = info.variants.map((v) => `${v.name} (${v.width}×${v.height}, ${formatBytes(v.bytes)})`).join(' · ');
+  return el('div', { class: 'resize-result' }, `📐 Created ${files} `, snippet(`resize|${item.url}`, info.snippet));
 }
 
 // key is the compressedResults key the snippet is stored under.
-function snippetHtml(key, snippet) {
-  return `<pre class="snippet">${escapeHtml(snippet)}</pre>
-      <button class="mini-btn" data-act="copy-snippet" data-key="${escapeHtml(key)}">Copy snippet</button>`;
+function snippet(key, text) {
+  return [
+    el('pre', { class: 'snippet' }, text),
+    el('button', { class: 'mini-btn', 'data-act': 'copy-snippet', 'data-key': key }, 'Copy snippet')
+  ];
 }
 
-function compressResultHtml(item, info) {
-  if (!info) return '';
-  const webp = info.webp
-    ? `<div class="resize-result">🌐 WebP copy ${escapeHtml(info.webp.name)} (${formatBytes(info.webp.bytes)})
-        ${snippetHtml(item.url, info.snippet)}
-      </div>`
-    : '';
+// The result pill(s) after compressing, or null if this image has not been compressed yet.
+function compressResult(item, info) {
+  if (!info) return null;
+  const webp =
+    info.webp &&
+    el('div', { class: 'resize-result' }, `🌐 WebP copy ${info.webp.name} (${formatBytes(info.webp.bytes)}) `, snippet(item.url, info.snippet));
   if (KEPT_NOTES.has(info.note)) {
-    return `<div class="compress-result-pill">ℹ️ Not changed: ${escapeHtml(info.reason || 'already optimal')}</div>${webp}`;
+    return [el('div', { class: 'compress-result-pill' }, `ℹ️ Not changed: ${info.reason || 'already optimal'}`), webp];
   }
-  return `<div class="compress-result-pill">
-      ✓ ${formatBytes(info.beforeBytes)} → <strong>${formatBytes(info.afterBytes)}</strong>
-      (-${info.savedPct}% · ${info.width}×${info.height}px kept${info.note === 'compressed-lossy' ? ` · ${escapeHtml(info.reason)}` : ''})
-    </div>${webp}`;
+  const lossyNote = info.note === 'compressed-lossy' ? ` · ${info.reason}` : '';
+  return [
+    el(
+      'div',
+      { class: 'compress-result-pill' },
+      `✓ ${formatBytes(info.beforeBytes)} → `,
+      el('strong', {}, formatBytes(info.afterBytes)),
+      ` (-${info.savedPct}% · ${info.width}×${info.height}px kept${lossyNote})`
+    ),
+    webp
+  ];
 }
 
 // ---------- measured savings (background dry-run compression) ----------
@@ -429,16 +447,17 @@ function renderSavingsKpi() {
     measured < items.length ? `Measuring ${measured}/${items.length}…` : items.length ? 'Measured by test compression' : 'Nothing to compress';
 }
 
-function estimateHtml(item) {
+function estimatePill(item) {
+  const pill = (text) => el('div', { class: 'estimate-pill' }, text);
   const e = estimates.get(item.url);
   if (e && !e.error) {
-    if (e.unchanged) return `<div class="estimate-pill">ℹ️ Compression can't shrink this: ${escapeHtml(e.reason || 'already optimal')}</div>`;
-    return `<div class="estimate-pill">💡 Compression can save ${formatBytes(e.beforeBytes - e.afterBytes)} (-${e.savedPct}%)</div>`;
+    if (e.unchanged) return pill(`ℹ️ Compression can't shrink this: ${e.reason || 'already optimal'}`);
+    return pill(`💡 Compression can save ${formatBytes(e.beforeBytes - e.afterBytes)} (-${e.savedPct}%)`);
   }
   if (item.needsResize && !item.needsCompression) {
-    return `<div class="estimate-pill">ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed)${isResizable(item) ? ' — use Resize.' : '.'}</div>`;
+    return pill(`ℹ️ Only resizing would make this lighter (its pixel dimensions are larger than displayed)${isResizable(item) ? ' — use Resize.' : '.'}`);
   }
-  return '';
+  return null;
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
@@ -483,97 +502,79 @@ function renderDashboard() {
 
   const visibleItems = filterAndSortItems(items);
   if (visibleItems.length === 0) {
-    els.itemsList.innerHTML = `<div class="empty-state">No images match the current filter.</div>`;
+    showEmptyState('No images match the current filter.');
     return;
   }
 
-  els.itemsList.innerHTML = visibleItems
-    .map((item) => {
-      const hasThumb = item.url && !item.url.startsWith('inline-');
-      const thumbHtml = hasThumb
-        ? `<img src="${escapeHtml(item.url)}" alt="" loading="lazy" />`
-        : `<span class="thumb-fallback">${escapeHtml(item.format)}</span>`;
-
-      const statusLabel =
-        item.severity === 'error' ? 'Error' : item.severity === 'warn' ? 'Warn' : 'OK';
-
-      const compPillHtml =
-        (compressResultHtml(item, compressedResults.get(item.url)) || estimateHtml(item)) +
-        resizeResultHtml(item, compressedResults.get(`resize|${item.url}`));
-
-      const issuesHtml =
-        item.issues.length > 0
-          ? `<div class="item-issues">
-              ${item.issues
-                .map(
-                  (iss) =>
-                    `<div class="issue-line ${iss.level === 'warn' ? 'warn' : ''}">• ${escapeHtml(
-                      iss.text
-                    )}</div>`
-                )
-                .join('')}
-            </div>`
-          : '';
-
-      return `
-        <div class="item-card status-${escapeHtml(item.severity)}" data-id="${escapeHtml(item.id)}">
-          <div class="thumb-wrap">${thumbHtml}</div>
-          <div class="item-body">
-            <div class="item-header">
-              <span class="item-name" title="Original Filename: ${escapeHtml(
-                item.originalFilename
-              )}">${escapeHtml(item.originalFilename)}</span>
-              <div class="item-badges">
-                <span class="badge fmt">${escapeHtml(item.format)}</span>
-                <span class="badge status-${escapeHtml(item.severity)}">${statusLabel}</span>
-              </div>
-            </div>
-            <div class="item-specs">
-              <span><strong>Size:</strong> ${escapeHtml(item.fileSizeFormatted)} (≤ ${escapeHtml(
-        item.recommendedFormatted
-      )})</span>
-              <span><strong>Rendered:</strong> ${item.renderedW}×${item.renderedH}px</span>
-              <span><strong>Intrinsic:</strong> ${item.intrinsicW || '?'}×${
-        item.intrinsicH || '?'
-      }px</span>
-              <span><strong>Ratio:</strong> ${
-                item.aspectMismatchPct > 0 ? `${item.aspectMismatchPct}% diff` : 'Match'
-              }</span>
-            </div>
-            ${compPillHtml}
-            ${issuesHtml}
-          </div>
-          <div class="item-actions">
-            <button class="mini-btn compress-btn" data-act="compress" data-id="${escapeHtml(
-              item.id
-            )}" title="Compress &amp; save ${escapeHtml(
-        item.originalFilename
-      )} keeping original dimensions &amp; format">Compress</button>
-            ${
-              isResizable(item)
-                ? `<button class="mini-btn resize-btn" data-act="resize" data-id="${escapeHtml(item.id)}" title="Create ${variantWidths(item).map((w) => w + 'px').join(' and ')} wide versions plus a srcset snippet">Resize</button>`
-                : ''
-            }
-            ${
-              canPreview(item)
-                ? `<button class="mini-btn" data-act="preview" data-id="${escapeHtml(item.id)}" title="Compare original and compressed side by side and pick the quality">Preview</button>`
-                : ''
-            }
-            <button class="mini-btn" data-act="locate" data-id="${escapeHtml(
-              item.id
-            )}" title="Scroll to image on page">Locate</button>
-            <button class="mini-btn" data-act="copy" data-url="${escapeHtml(
-              item.url
-            )}" title="Copy image URL">Copy</button>
-          </div>
-        </div>
-      `;
-    })
-    .join('');
+  els.itemsList.replaceChildren(...visibleItems.map(itemCard));
 
   els.itemsList.querySelectorAll('.mini-btn').forEach((btn) => {
     btn.addEventListener('click', () => onItemAction(btn));
   });
+}
+
+function itemCard(item) {
+  const hasThumb = item.url && !item.url.startsWith('inline-');
+  const statusLabel = item.severity === 'error' ? 'Error' : item.severity === 'warn' ? 'Warn' : 'OK';
+  const spec = (label, value) => el('span', {}, el('strong', {}, label), ` ${value}`);
+  const button = (act, title, label, cls = '') =>
+    el('button', { class: `mini-btn${cls}`, 'data-act': act, 'data-id': item.id, title }, label);
+
+  return el(
+    'div',
+    { class: `item-card status-${item.severity}`, 'data-id': item.id },
+    el(
+      'div',
+      { class: 'thumb-wrap' },
+      hasThumb ? el('img', { src: item.url, alt: '', loading: 'lazy' }) : el('span', { class: 'thumb-fallback' }, item.format)
+    ),
+    el(
+      'div',
+      { class: 'item-body' },
+      el(
+        'div',
+        { class: 'item-header' },
+        el('span', { class: 'item-name', title: `Original Filename: ${item.originalFilename}` }, item.originalFilename),
+        el(
+          'div',
+          { class: 'item-badges' },
+          el('span', { class: 'badge fmt' }, item.format),
+          el('span', { class: `badge status-${item.severity}` }, statusLabel)
+        )
+      ),
+      el(
+        'div',
+        { class: 'item-specs' },
+        spec('Size:', `${item.fileSizeFormatted} (≤ ${item.recommendedFormatted})`),
+        spec('Rendered:', `${item.renderedW}×${item.renderedH}px`),
+        spec('Intrinsic:', `${item.intrinsicW || '?'}×${item.intrinsicH || '?'}px`),
+        spec('Ratio:', item.aspectMismatchPct > 0 ? `${item.aspectMismatchPct}% diff` : 'Match')
+      ),
+      compressResult(item, compressedResults.get(item.url)) ?? estimatePill(item),
+      resizeResult(item, compressedResults.get(`resize|${item.url}`)),
+      item.issues.length > 0 &&
+        el(
+          'div',
+          { class: 'item-issues' },
+          item.issues.map((iss) => el('div', { class: `issue-line ${iss.level === 'warn' ? 'warn' : ''}` }, `• ${iss.text}`))
+        )
+    ),
+    el(
+      'div',
+      { class: 'item-actions' },
+      button('compress', `Compress & save ${item.originalFilename} keeping original dimensions & format`, 'Compress', ' compress-btn'),
+      isResizable(item) &&
+        button(
+          'resize',
+          `Create ${variantWidths(item).map((w) => w + 'px').join(' and ')} wide versions plus a srcset snippet`,
+          'Resize',
+          ' resize-btn'
+        ),
+      canPreview(item) && button('preview', 'Compare original and compressed side by side and pick the quality', 'Preview'),
+      button('locate', 'Scroll to image on page', 'Locate'),
+      el('button', { class: 'mini-btn', 'data-act': 'copy', 'data-url': item.url, title: 'Copy image URL' }, 'Copy')
+    )
+  );
 }
 
 function flash(btn, text, restore, ms = 1200) {
@@ -694,13 +695,14 @@ els.rescanBtn.addEventListener('click', () => ensureAndScan(true, activeTabId));
 els.openPanelBtn.hidden = IS_PANEL;
 els.openPanelBtn.addEventListener('click', async () => {
   // Firefox: the sidebar must open synchronously inside the click, before any await.
-  if (!chrome.sidePanel && globalThis.browser?.sidebarAction) {
+  const sidePanel = chrome.sidePanel;
+  if (!sidePanel && globalThis.browser?.sidebarAction) {
     browser.sidebarAction.open();
     window.close();
     return;
   }
   const win = await chrome.windows.getCurrent();
-  await chrome.sidePanel.open({ windowId: win.id });
+  await sidePanel.open({ windowId: win.id });
   window.close();
 });
 

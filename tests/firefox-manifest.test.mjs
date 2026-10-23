@@ -23,6 +23,7 @@ export const tests = {
     const gecko = ff.browser_specific_settings.gecko;
     want(gecko.id === FIREFOX_ID && gecko.strict_min_version === '140.0', 'gecko ' + JSON.stringify(gecko));
     want(JSON.stringify(gecko.data_collection_permissions) === '{"required":["none"]}', 'data collection');
+    want(ff.browser_specific_settings.gecko_android?.strict_min_version === '142.0', 'gecko_android');
     for (const k of ['name', 'version', 'description', 'homepage_url', 'action', 'icons', 'content_scripts', 'commands']) {
       want(JSON.stringify(ff[k]) === JSON.stringify(m[k]), `${k} differs`);
     }

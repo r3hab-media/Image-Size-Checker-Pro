@@ -53,13 +53,15 @@
     }
   }
 
-  function escapeHtml(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+  // Builds an element. Attribute values and string children are set as plain data, never parsed as
+  // HTML, so values read from the page are safe here. Null, false and '' children are skipped.
+  function createEl(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [name, value] of Object.entries(attrs)) {
+      if (value != null && value !== false) node.setAttribute(name, value);
+    }
+    node.append(...children.flat().filter((c) => c != null && c !== false && c !== ''));
+    return node;
   }
 
   function formatBytes(bytes) {
@@ -975,63 +977,60 @@
     const statusLabel =
       item.severity === 'error' ? 'Needs Fix' : item.severity === 'warn' ? 'Warning' : 'Optimized';
 
-    const issuesHtml =
-      item.issues.length > 0
-        ? `<div class="isc-issues ${item.severity === 'warn' ? 'warn-only' : ''}">
-            ${item.issues
-              .map(
-                (iss) =>
-                  `<div class="isc-issue-item"><span>${iss.level === 'error' ? '●' : '▲'}</span><span>${escapeHtml(iss.text)}</span></div>`
-              )
-              .join('')}
-          </div>`
-        : '';
-
     const altLabel = item.kind === 'img' ? (item.isDecorative ? 'Decorative' : item.altText ? 'Alt OK' : 'Missing Alt') : item.kind.toUpperCase();
+    const metric = (label, value, sub) =>
+      createEl(
+        'div',
+        { class: 'isc-metric' },
+        createEl('div', { class: 'isc-metric-label' }, label),
+        createEl('div', { class: 'isc-metric-val' }, value),
+        createEl('div', { class: 'isc-metric-sub' }, sub)
+      );
 
-    tooltipEl.innerHTML = `
-      <div class="isc-tt-header">
-        <div class="isc-tt-title" title="${escapeHtml(item.originalFilename)}">${escapeHtml(item.originalFilename)}</div>
-        <div class="isc-tt-badges">
-          <span class="isc-tag fmt">${escapeHtml(item.format)}</span>
-          <span class="isc-tag status-${escapeHtml(item.severity)}">${statusLabel}</span>
-        </div>
-      </div>
-      <div class="isc-tt-grid">
-        <div class="isc-metric">
-          <div class="isc-metric-label">File Weight</div>
-          <div class="isc-metric-val">${escapeHtml(item.fileSizeFormatted)}</div>
-          <div class="isc-metric-sub">Target: ≤ ${escapeHtml(item.recommendedFormatted)}</div>
-        </div>
-        <div class="isc-metric">
-          <div class="isc-metric-label">Dimensions (Px)</div>
-          <div class="isc-metric-val">${item.renderedW}×${item.renderedH}</div>
-          <div class="isc-metric-sub">Intrinsic: ${item.intrinsicW || '?'}×${item.intrinsicH || '?'}</div>
-        </div>
-        <div class="isc-metric">
-          <div class="isc-metric-label">Aspect Ratio</div>
-          <div class="isc-metric-val">${escapeHtml(item.renderedRatioLabel)}</div>
-          <div class="isc-metric-sub">${
-            item.aspectMismatchPct > 0 ? `${item.aspectMismatchPct}% diff (${escapeHtml(item.objectFit)})` : 'Exact match'
-          }</div>
-        </div>
-        <div class="isc-metric">
-          <div class="isc-metric-label">Alt & Loading</div>
-          <div class="isc-metric-val">${altLabel}</div>
-          <div class="isc-metric-sub">${
-            item.kind === 'img' ? `loading="${escapeHtml(item.loadingAttr)}"` : `DPR ${item.dpr}x`
-          }</div>
-        </div>
-      </div>
-      ${issuesHtml}
-      <div class="isc-tt-footer">
-        <span>${pinnedItemId === item.id ? '📌 Pinned (click badge to unpin)' : 'Click badge to pin details'}</span>
-        <div class="isc-tt-actions">
-          <button class="isc-btn" data-action="copy-url">Copy URL</button>
-          ${item.url && !item.url.startsWith('inline-') ? `<button class="isc-btn" data-action="open-url">Open</button>` : ''}
-        </div>
-      </div>
-    `;
+    tooltipEl.replaceChildren(
+      createEl(
+        'div',
+        { class: 'isc-tt-header' },
+        createEl('div', { class: 'isc-tt-title', title: item.originalFilename }, item.originalFilename),
+        createEl(
+          'div',
+          { class: 'isc-tt-badges' },
+          createEl('span', { class: 'isc-tag fmt' }, item.format),
+          createEl('span', { class: `isc-tag status-${item.severity}` }, statusLabel)
+        )
+      ),
+      createEl(
+        'div',
+        { class: 'isc-tt-grid' },
+        metric('File Weight', item.fileSizeFormatted, `Target: ≤ ${item.recommendedFormatted}`),
+        metric('Dimensions (Px)', `${item.renderedW}×${item.renderedH}`, `Intrinsic: ${item.intrinsicW || '?'}×${item.intrinsicH || '?'}`),
+        metric(
+          'Aspect Ratio',
+          item.renderedRatioLabel,
+          item.aspectMismatchPct > 0 ? `${item.aspectMismatchPct}% diff (${item.objectFit})` : 'Exact match'
+        ),
+        metric('Alt & Loading', altLabel, item.kind === 'img' ? `loading="${item.loadingAttr}"` : `DPR ${item.dpr}x`)
+      ),
+      item.issues.length > 0 &&
+        createEl(
+          'div',
+          { class: `isc-issues ${item.severity === 'warn' ? 'warn-only' : ''}` },
+          item.issues.map((iss) =>
+            createEl('div', { class: 'isc-issue-item' }, createEl('span', {}, iss.level === 'error' ? '●' : '▲'), createEl('span', {}, iss.text))
+          )
+        ),
+      createEl(
+        'div',
+        { class: 'isc-tt-footer' },
+        createEl('span', {}, pinnedItemId === item.id ? '📌 Pinned (click badge to unpin)' : 'Click badge to pin details'),
+        createEl(
+          'div',
+          { class: 'isc-tt-actions' },
+          createEl('button', { class: 'isc-btn', 'data-action': 'copy-url' }, 'Copy URL'),
+          item.url && !item.url.startsWith('inline-') && createEl('button', { class: 'isc-btn', 'data-action': 'open-url' }, 'Open')
+        )
+      )
+    );
 
     tooltipEl.querySelectorAll('.isc-btn').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
@@ -1123,7 +1122,10 @@
         node.key = key;
         node.box.className = `isc-box status-${item.severity}${highlightedItemId === item.id ? ' pulse-focus' : ''}`;
         node.pill.className = `isc-pill status-${item.severity}`;
-        node.pill.innerHTML = `<span class="dot"></span><span>${escapeHtml(item.fileSizeFormatted)} · ${item.renderedW}×${item.renderedH}${ratioFlag}</span>`;
+        node.pill.replaceChildren(
+          createEl('span', { class: 'dot' }),
+          createEl('span', {}, `${item.fileSizeFormatted} · ${item.renderedW}×${item.renderedH}${ratioFlag}`)
+        );
       }
       node.box.style.left = `${Math.round(rect.left)}px`;
       node.box.style.top = `${Math.round(rect.top)}px`;
